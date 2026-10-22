@@ -19,6 +19,7 @@ declare global {
 
 type Tab = "scan" | "collection" | "saved";
 type Stored = CollectionItem & { photoDataUrl?: string };
+type FamilyCollection = { id: string; name: string; owner_id?: string; role: string; item_count?: number };
 
 const STORAGE_KEY = "findly.collection.v1";
 const FAVORITES_KEY = "findly.favorites.v1";
@@ -57,6 +58,10 @@ export default function Home() {
   const [telegramName, setTelegramName] = useState("Гость");
   const [telegramInitData, setTelegramInitData] = useState("");
   const [notice, setNotice] = useState("");
+  const [familyCollections, setFamilyCollections] = useState<FamilyCollection[]>([]);
+  const [activeCollectionId, setActiveCollectionId] = useState("");
+  const [joinToken, setJoinToken] = useState("");
+  const [familyBusy, setFamilyBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -83,6 +88,12 @@ export default function Home() {
           }
         })
         .catch(() => { /* local collection remains available */ });
+      fetch("/api/family", { headers: { "x-telegram-init-data": initData } })
+        .then(async response => response.ok ? response.json() : null)
+        .then(data => {
+          if (Array.isArray(data?.collections)) setFamilyCollections(data.collections as FamilyCollection[]);
+        })
+        .catch(() => { /* family sharing is optional until cloud services are configured */ });
     }
   }, []);
 
@@ -134,9 +145,9 @@ export default function Home() {
 
   const saveCurrent = async () => {
     if (!current) return;
-    const item: Stored = { ...current, ownerId: telegramInitData ? "telegram-user" : "local-user", status: "saved", savedAt: new Date().toISOString() };
+    const item: Stored = { ...current, ownerId: telegramInitData ? "telegram-user" : "local-user", collectionId: activeCollectionId || undefined, status: "saved", savedAt: new Date().toISOString() };
     setItems(old => [item, ...old.filter(x => x.id !== item.id)]);
-    setCurrent(null); setPhoto(null); setExtra(""); setTab("collection"); setNotice("Добавлено в твою коллекцию"); haptic("success");
+    setCurrent(null); setPhoto(null); setExtra(""); setTab("collection"); setNotice(activeCollectionId ? "Добавлено в общую коллекцию" : "Добавлено в твою коллекцию"); haptic("success");
     if (telegramInitData) {
       try {
         const res = await fetch("/api/collection", { method: "POST", headers: { "Content-Type": "application/json", "x-telegram-init-data": telegramInitData }, body: JSON.stringify({ item }) });
@@ -155,6 +166,38 @@ export default function Home() {
   };
 
   const toggleFavorite = (id: string) => setFavorites(old => old.includes(id) ? old.filter(x => x !== id) : [id, ...old]);
+  const familyAction = async (body: Record<string, string>) => {
+    if (!telegramInitData) { setNotice("Открой Findly через Telegram, чтобы создавать общие коллекции."); return null; }
+    setFamilyBusy(true);
+    try {
+      const response = await fetch("/api/family", { method: "POST", headers: { "Content-Type": "application/json", "x-telegram-init-data": telegramInitData }, body: JSON.stringify(body) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error === "database_not_configured" ? "Для общих коллекций нужно подключить базу данных." : data.error === "invite_expired" ? "Код приглашения истёк или уже использован." : "Не удалось выполнить действие.");
+      const list = await fetch("/api/family", { headers: { "x-telegram-init-data": telegramInitData } });
+      if (list.ok) { const refreshed = await list.json(); setFamilyCollections(refreshed.collections || []); }
+      return data;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ошибка семейной коллекции.");
+      return null;
+    } finally { setFamilyBusy(false); }
+  };
+  const createFamilyCollection = async () => {
+    const name = window.prompt("Название общей коллекции", "Семейные находки");
+    if (!name?.trim()) return;
+    const data = await familyAction({ action: "create", name: name.trim() });
+    if (data?.collection?.id) { setActiveCollectionId(data.collection.id); setNotice("Общая коллекция создана"); }
+  };
+  const createInvite = async (collectionId: string) => {
+    const data = await familyAction({ action: "invite", collectionId });
+    if (data?.token) {
+      try { await navigator.clipboard.writeText(data.token); setNotice("Код приглашения скопирован. Отправь его человеку, которого хочешь пригласить."); }
+      catch { setNotice("Код приглашения: " + data.token); }
+    }
+  };
+  const joinFamilyCollection = async () => {
+    const data = await familyAction({ action: "join", token: joinToken.trim() });
+    if (data?.collection) { setJoinToken(""); setNotice("Ты присоединился к общей коллекции"); }
+  };
   const resetScan = () => { setCurrent(null); setPhoto(null); setError(""); setExtra(""); };
 
   return (
@@ -211,7 +254,7 @@ export default function Home() {
             {current.followUpQuestions?.length > 0 && <div className="panel followup-panel"><div className="panel-heading"><span className="mini-icon">＋</span><div><strong>Можно уточнить оценку</strong><small>Дополнительные детали повысят точность</small></div></div>{current.followUpQuestions.map((question, i) => <p className="question-row" key={i}><span>{i + 1}</span>{question}</p>)}</div>}
             <div className="panel listing-draft"><div className="panel-heading"><span className="mini-icon">✎</span><div><strong>Черновик объявления</strong><small>Можно скопировать в Vinted</small></div></div><strong>{current.listingDraft.title}</strong><p>{current.listingDraft.description}</p><div className="hashtags">{current.listingDraft.hashtags?.map(tag => <span key={tag}>{tag}</span>)}</div><button className="button-secondary full-width" onClick={() => { const text = [current.listingDraft.title, current.listingDraft.description, current.listingDraft.hashtags?.join(" ")].filter(Boolean).join("\n\n"); void navigator.clipboard?.writeText(text); setNotice("Текст объявления скопирован"); }}>Копировать объявление ↗</button></div>
             {current.sources?.length > 0 && <div className="source-line">Источники: {current.sources.map((source, i) => <a href={source} target="_blank" rel="noreferrer" key={source}>Источник {i + 1} ↗ </a>)}</div>}
-            <div className="save-question"><span className="save-spark">✧</span><h2>Добавить в твою коллекцию?</h2><p>Даже если вещь ничего не стоит — решаешь только ты.</p><div className="save-actions"><button className="button-secondary" onClick={resetScan}>Не сохранять</button><button className="button-primary" onClick={saveCurrent}>Добавить в коллекцию <span>＋</span></button></div></div>
+            <div className="save-question"><span className="save-spark">✧</span><h2>{activeCollectionId ? "Добавить в общую коллекцию?" : "Добавить в твою коллекцию?"}</h2><p>Даже если вещь ничего не стоит — решаешь только ты.</p>{familyCollections.length > 0 && <label className="save-target">Куда сохранить<select value={activeCollectionId} onChange={e => setActiveCollectionId(e.target.value)}><option value="">Моя личная коллекция</option>{familyCollections.filter(x => x.role !== "viewer").map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>}<div className="save-actions"><button className="button-secondary" onClick={resetScan}>Не сохранять</button><button className="button-primary" onClick={saveCurrent}>Добавить в коллекцию <span>＋</span></button></div></div>
           </div>
         )}
 
@@ -220,6 +263,13 @@ export default function Home() {
             <div className="hero-copy compact"><div className="eyebrow"><span className="status-pulse"/> YOUR PERSONAL VAULT</div><h1>Твоя <span>коллекция.</span></h1><p>Всё, что ты нашёл, оценил и решил сохранить.</p></div>
             <div className="collection-summary"><div><span>Сохранено</span><strong>{items.filter(x => x.status !== "archived").length}</strong></div><div><span>На продаже</span><strong>{items.filter(x => x.status === "for_sale").length}</strong></div><div><span>Продано</span><strong>{items.filter(x => x.status === "sold").length}</strong></div></div>
             <div className="collection-toolbar"><div className="search-box"><span>⌕</span><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Найти вещь…"/></div><button className="square-button" onClick={() => { setTab("scan"); resetScan(); }} aria-label="Scan item">＋</button></div>
+            <div className="family-panel panel">
+              <div className="panel-heading"><span className="mini-icon">⌘</span><div><strong>Общие коллекции</strong><small>Собирай находки с семьёй и друзьями</small></div></div>
+              <button className="button-secondary full-width" onClick={createFamilyCollection} disabled={familyBusy}>＋ Создать общую коллекцию</button>
+              {familyCollections.map(collection => <div className="family-row" key={collection.id}><button className="family-select" onClick={() => setActiveCollectionId(collection.id)}><span className="family-glyph">◇</span><span><strong>{collection.name}</strong><small>{collection.item_count || 0} вещей · {collection.role === "owner" ? "владелец" : collection.role === "viewer" ? "просмотр" : "участник"}</small></span></button><button className="family-invite" onClick={() => createInvite(collection.id)} disabled={familyBusy} aria-label="Пригласить участника">↗</button></div>)}
+              <div className="join-row"><input value={joinToken} onChange={e => setJoinToken(e.target.value)} placeholder="Код приглашения"/><button className="button-primary" onClick={joinFamilyCollection} disabled={familyBusy || joinToken.trim().length < 20}>Войти</button></div>
+              {activeCollectionId && <div className="active-collection-note"><span>✓</span> Новые сканы будут сохраняться в выбранную общую коллекцию. <button onClick={() => setActiveCollectionId("")}>Вернуть личную</button></div>}
+            </div>
             <div className="filter-tabs">{(["all", "for_sale", "sold"] as const).map(key => <button key={key} className={filter === key ? "filter-active" : ""} onClick={() => setFilter(key)}>{key === "all" ? "Все вещи" : key === "for_sale" ? "На продаже" : "Продано"}</button>)}</div>
             {activeItems.length ? <div className="item-grid">{activeItems.map(item => <ItemCard key={item.id} item={item} onClick={() => setDetail(item)} favorite={favorites.includes(item.id)} onFavorite={() => toggleFavorite(item.id)}/>)}</div> : <div className="empty-state"><span className="empty-glyph">◇</span><h3>{query ? "Ничего не найдено" : "Коллекция пока пуста"}</h3><p>{query ? "Попробуй изменить запрос." : "Первый скан — начало твоей коллекции. Сохраняй вещи, которые хочется оставить."}</p><button className="button-primary" onClick={() => setTab("scan")}>Сканировать предмет ↗</button></div>}
           </div>
