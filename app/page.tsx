@@ -102,8 +102,8 @@ export default function Home() {
       setTelegramUsername(user.username || "");
     }
     fetch("/api/auth/telegram", { headers: initData ? { "x-telegram-init-data": initData } : {} })
-      .then(async response => ({ ok: response.ok, data: await response.json() }))
-      .then(({ data }) => {
+      .then(async response => await response.json())
+      .then(data => {
         if (data.authenticated && data.user) {
           setTelegramStatus("connected");
           setTelegramName(data.user.firstName || user?.first_name || "Пользователь");
