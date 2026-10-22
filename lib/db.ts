@@ -67,7 +67,7 @@ export async function listItems(ownerId: string) {
   const pool = getPool();
   if (!pool || !(await ensureSchema())) return null;
   const result = await pool.query(
-    "SELECT id, owner_id, collection_id, status, payload, created_at FROM findly_items WHERE owner_id = $1 AND status <> 'archived' ORDER BY updated_at DESC LIMIT 300",
+    "SELECT i.id, i.owner_id, i.collection_id, i.status, i.payload, i.created_at FROM findly_items i WHERE (i.owner_id = $1 OR i.collection_id IN (SELECT collection_id FROM findly_members WHERE user_id = $1)) AND i.status <> 'archived' ORDER BY i.updated_at DESC LIMIT 300",
     [ownerId],
   );
   return result.rows.map((row) => ({
@@ -84,15 +84,20 @@ export async function saveItem(ownerId: string, item: Record<string, unknown>) {
   const pool = getPool();
   if (!pool || !(await ensureSchema())) return null;
   const id = String(item.id || crypto.randomUUID());
+  const collectionId = item.collectionId ? String(item.collectionId) : null;
+  if (collectionId) {
+    const membership = await pool.query("SELECT role FROM findly_members WHERE collection_id=$1 AND user_id=$2", [collectionId, ownerId]);
+    if (!membership.rows.length || !["owner", "editor"].includes(membership.rows[0].role)) throw new Error("No permission to save into this collection");
+  }
   const status = ["saved", "for_sale", "sold", "archived"].includes(String(item.status)) ? String(item.status) : "saved";
-  const payload = { ...item, id, ownerId, status };
+  const payload = { ...item, id, ownerId, collectionId, status };
   const photo = typeof item.photoDataUrl === "string" && item.photoDataUrl.length < 1_500_000 ? item.photoDataUrl : null;
   await pool.query(
     `INSERT INTO findly_items (id, owner_id, collection_id, status, title, payload, photo_data_url)
      VALUES ($1,$2,$3,$4,$5,$6,$7)
      ON CONFLICT (id) DO UPDATE SET status=EXCLUDED.status, title=EXCLUDED.title, payload=EXCLUDED.payload, photo_data_url=EXCLUDED.photo_data_url, updated_at=NOW()
      WHERE findly_items.owner_id = EXCLUDED.owner_id`,
-    [id, ownerId, item.collectionId ? String(item.collectionId) : null, status, String(item.title || "Untitled item"), JSON.stringify(payload), photo],
+    [id, ownerId, collectionId, status, String(item.title || "Untitled item"), JSON.stringify(payload), photo],
   );
   return payload;
 }
