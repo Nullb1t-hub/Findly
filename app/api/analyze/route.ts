@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import { verifyTelegramInitData } from "@/lib/telegram";
 
 export const runtime = "nodejs";
@@ -56,12 +56,7 @@ export async function POST(request: NextRequest) {
     const base64 = image.split(",")[1];
     if (!base64) return NextResponse.json({ error: "invalid_image" }, { status: 400 });
 
-    const client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = client.getGenerativeModel({
-      model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
-      generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
-      tools: [{ googleSearch: {} } as never],
-    });
+    const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
     const prompt = `You are Findly, a careful global resale researcher. Analyze the attached photo and research comparable items on the public web using Google Search grounding. User's primary market: ${country}; preferred currency: ${currency}. Additional notes: ${extra || "none"}.
 Return only valid JSON with this schema:
@@ -76,11 +71,19 @@ Return only valid JSON with this schema:
 }
 Rules: Search the exact brand/model first, then close visual matches. Include only URLs actually found and never invent listings, prices, sales, or sources. Clearly distinguish active asking prices from confirmed sold prices. Do not claim sold prices unless the source explicitly shows a completed sale. If no reliable matches exist, use null prices, low confidence, and explain why. Price the primary market realistically after considering item condition and shipping/fees; international markets are additional opportunities, not assumed better. For additional markets, include only plausible regions and explain shipping, import, platform-access, and fees caveats. If item may be counterfeit or high-risk, say so. If more photos are required, add up to 3 concise follow-up questions. Keep results in Russian.`;
 
-    const result = await model.generateContent([
-      { text: prompt },
-      { inlineData: { mimeType, data: base64 } },
-    ]);
-    const raw = extractJson(result.response.text());
+    const result = await client.models.generateContent({
+      model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+      contents: [{
+        role: "user",
+        parts: [{ text: prompt }, { inlineData: { mimeType, data: base64 } }],
+      }],
+      config: {
+        responseMimeType: "application/json",
+        temperature: 0.2,
+        tools: [{ googleSearch: {} }],
+      },
+    });
+    const raw = extractJson(result.text || "");
     const safe = {
       ...fallback,
       ...raw,
