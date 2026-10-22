@@ -80,12 +80,15 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [telegramName, setTelegramName] = useState("Гость");
   const [telegramInitData, setTelegramInitData] = useState("");
+  const [telegramStatus, setTelegramStatus] = useState<"checking" | "connected" | "not_connected" | "not_configured">("checking");
+  const [telegramUsername, setTelegramUsername] = useState("");
   const [notice, setNotice] = useState("");
   const [familyCollections, setFamilyCollections] = useState<FamilyCollection[]>([]);
   const [activeCollectionId, setActiveCollectionId] = useState("");
   const [joinToken, setJoinToken] = useState("");
   const [familyBusy, setFamilyBusy] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const galleryRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const tg = window.Telegram?.WebApp;
@@ -94,7 +97,21 @@ export default function Home() {
     const initData = tg?.initData || "";
     setTelegramInitData(initData);
     const user = tg?.initDataUnsafe?.user;
-    if (user) setTelegramName(user.first_name || "Пользователь");
+    if (user) {
+      setTelegramName(user.first_name || "Пользователь");
+      setTelegramUsername(user.username || "");
+    }
+    fetch("/api/auth/telegram", { headers: initData ? { "x-telegram-init-data": initData } : {} })
+      .then(async response => ({ ok: response.ok, data: await response.json() }))
+      .then(({ data }) => {
+        if (data.authenticated && data.user) {
+          setTelegramStatus("connected");
+          setTelegramName(data.user.firstName || user?.first_name || "Пользователь");
+          setTelegramUsername(data.user.username || user?.username || "");
+        } else if (!data.configured) setTelegramStatus("not_configured");
+        else setTelegramStatus("not_connected");
+      })
+      .catch(() => setTelegramStatus("not_connected"));
     setItems(readLocal());
     try { setFavorites(JSON.parse(localStorage.getItem(FAVORITES_KEY) || "[]") as string[]); } catch { /* empty */ }
     if (initData) {
@@ -133,7 +150,8 @@ export default function Home() {
   const savedItems = useMemo(() => items.filter(item => favorites.includes(item.id) && item.status !== "archived"), [items, favorites]);
 
   const haptic = (style = "light") => window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.(style);
-  const choosePhoto = () => { haptic(); fileRef.current?.click(); };
+  const openCamera = () => { haptic(); cameraRef.current?.click(); };
+  const chooseGallery = () => { haptic(); galleryRef.current?.click(); };
   const onFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -231,25 +249,28 @@ export default function Home() {
           <span className="brand-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.5 3.5a7 7 0 1 0 4.2 12.6l4.3 4.4 1.4-1.4-4.4-4.3a7 7 0 0 0-5.5-11.3Z"/><path d="M7.5 10.5h6M10.5 7.5v6"/></svg></span>
           <span><strong>findly</strong><small>DISCOVER THE VALUE</small></span>
         </button>
-        <div className="profile-pill"><span className="profile-dot">{telegramName.slice(0, 1).toUpperCase()}</span><span>{telegramName}</span></div>
+        <div className={`profile-pill ${telegramStatus === "connected" ? "profile-connected" : "profile-disconnected"}`} title={telegramStatus === "connected" ? "Telegram подключён" : "Telegram не подключён"}><span className="profile-dot">{telegramStatus === "connected" ? telegramName.slice(0, 1).toUpperCase() : "↗"}</span><span>{telegramStatus === "connected" ? (telegramUsername ? `@${telegramUsername}` : telegramName) : telegramStatus === "checking" ? "Проверяем…" : telegramStatus === "not_configured" ? "Нужна настройка" : "Подключи Telegram"}</span></div>
       </header>
 
       <section className="page-content">
         {tab === "scan" && !current && (
           <>
+            {telegramStatus !== "connected" && <div className={`account-connect panel ${telegramStatus === "not_configured" ? "account-warning" : ""}`}><span className="account-connect-icon">↗</span><div><strong>{telegramStatus === "checking" ? "Проверяем Telegram…" : telegramStatus === "not_configured" ? "Сервер не подключён к боту" : "Открой Findly через Telegram"}</strong><p>{telegramStatus === "not_configured" ? "В Vercel → Settings → Environment Variables нужен TELEGRAM_BOT_TOKEN — токен именно этого бота. После добавления переменной сделай Redeploy." : telegramStatus === "not_connected" ? "Запусти приложение кнопкой из чата своего Telegram-бота, чтобы привязать аккаунт и синхронизировать коллекцию." : "Проверяем защищённое соединение с твоим Telegram-аккаунтом."}</p></div></div>}
             <div className="hero-copy">
               <div className="eyebrow"><span className="status-pulse" /> AI OBJECT INTELLIGENCE</div>
               <h1>У каждой вещи<br/><span>есть своя история.</span></h1>
               <p>Узнай, что у тебя в руках, сколько это может стоить и где выгоднее продать.</p>
             </div>
-            <button className={photo ? "scanner-card has-photo" : "scanner-card"} onClick={choosePhoto}>
+            <button className={photo ? "scanner-card has-photo" : "scanner-card"} onClick={openCamera}>
               {photo ? <Image className="selected-photo" src={photo} alt="Выбранный предмет" width={1200} height={800} unoptimized/> : <span className="scanner-visual"><span className="scan-ring ring-one"/><span className="scan-ring ring-two"/><span className="scan-core"><svg viewBox="0 0 24 24"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h2l1.3-1.5h4.4L15.5 5h2A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5Z"/><circle cx="12" cy="12" r="3.5"/></svg></span><span className="spark spark-a">✳</span><span className="spark spark-b">✧</span></span>}
-              <span className="scanner-label">{photo ? "Фото готово к анализу" : "Сканировать предмет"}</span>
-              <span className="scanner-sub">{photo ? "Нажми, чтобы выбрать другое фото" : "Одежда · техника · коллекции · всё что угодно"}</span>
-              <span className="scan-action">{photo ? "Изменить фото" : "Выбрать фото"} <span>↗</span></span>
+              <span className="scanner-label">{photo ? "Фото готово к анализу" : "Открыть камеру"}</span>
+              <span className="scanner-sub">{photo ? "Нажми, чтобы переснять предмет" : "Сфотографируй вещь — Findly найдёт похожие и оценит цену"}</span>
+              <span className="scan-action">{photo ? "Переснять фото" : "Запустить камеру"} <span>↗</span></span>
             </button>
-            {photo && <div className="selected-actions"><button className="button-secondary" onClick={resetScan}>Сбросить</button><button className="button-primary" onClick={analyze} disabled={loading}>{loading ? <><span className="spinner"/> Исследуем предмет…</> : "Определить стоимость"} <span>→</span></button></div>}
-            <input ref={fileRef} className="visually-hidden" type="file" accept="image/*" capture="environment" onChange={onFile}/>
+            {!photo && <div className="photo-source-actions"><button className="button-secondary" onClick={chooseGallery}><span>▧</span> Выбрать из галереи</button><span>JPG · PNG · до 5 МБ</span></div>}
+            {photo && <div className="selected-actions"><button className="button-secondary" onClick={chooseGallery}>Из галереи</button><button className="button-secondary" onClick={resetScan}>Сбросить</button><button className="button-primary" onClick={analyze} disabled={loading}>{loading ? <><span className="spinner"/> Исследуем предмет…</> : "Определить стоимость"} <span>→</span></button></div>}
+            <input ref={cameraRef} className="visually-hidden" type="file" accept="image/*" capture="environment" onChange={onFile}/>
+            <input ref={galleryRef} className="visually-hidden" type="file" accept="image/*" onChange={onFile}/>
             <div className="market-settings panel">
               <div className="panel-heading"><span className="mini-icon">◎</span><div><strong>Где будем искать?</strong><small>Сначала твой рынок, затем — мир</small></div></div>
               <div className="field-grid">
