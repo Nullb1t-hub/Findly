@@ -1,0 +1,32 @@
+name: Findly CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm install
+      - name: Build
+        run: npm run build
+        env:
+          GEMINI_API_KEY: build-placeholder
+          TELEGRAM_BOT_TOKEN: build-placeholder
+          DATABASE_URL: postgres://build:build@localhost:5432/build
+          DATABASE_SSL: "false"
