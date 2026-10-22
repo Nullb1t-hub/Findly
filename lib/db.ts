@@ -107,7 +107,7 @@ export async function updateItemStatus(ownerId: string, id: string, status: stri
   if (!pool || !(await ensureSchema())) return null;
   if (!["saved", "for_sale", "sold", "archived"].includes(status)) throw new Error("Invalid status");
   const result = await pool.query(
-    "UPDATE findly_items SET status=$3, payload=jsonb_set(payload, '{status}', to_jsonb($3::text)), updated_at=NOW() WHERE id=$1 AND owner_id=$2 RETURNING id",
+    "UPDATE findly_items SET status=$3, payload=jsonb_set(payload, '{status}', to_jsonb($3::text)), updated_at=NOW() WHERE id=$1 AND (owner_id=$2 OR collection_id IN (SELECT collection_id FROM findly_members WHERE user_id=$2 AND role IN ('owner','editor'))) RETURNING id",
     [id, ownerId, status],
   );
   return result.rowCount === 1;
