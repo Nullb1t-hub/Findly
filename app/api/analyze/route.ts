@@ -30,6 +30,9 @@ function extractJson(text: string) {
 
 export async function POST(request: NextRequest) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token && process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "telegram_not_configured", message: "Telegram authentication is not configured on the server." }, { status: 503 });
+  }
   if (token) {
     const initData = request.headers.get("x-telegram-init-data") || "";
     if (!verifyTelegramInitData(initData, token)) {
