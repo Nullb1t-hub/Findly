@@ -31,6 +31,28 @@ const money = (value: number | null | undefined, currency = "EUR") => {
 const readLocal = (): Stored[] => {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]") as Stored[]; } catch { return []; }
 };
+async function compressImage(file: File): Promise<{ dataUrl: string; mimeType: string }> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const maxSide = 1600;
+    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Canvas unavailable");
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    return { dataUrl: canvas.toDataURL("image/jpeg", 0.82), mimeType: "image/jpeg" };
+  } catch {
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({ dataUrl: String(reader.result), mimeType: file.type || "image/jpeg" });
+      reader.onerror = () => reject(new Error("Не удалось прочитать изображение."));
+      reader.readAsDataURL(file);
+    });
+  }
+}
 const iconFor = (category: string) => {
   const c = category.toLowerCase();
   if (/одеж|куртк|обув|футбол|брюк|плать/.test(c)) return "◈";
@@ -117,11 +139,12 @@ export default function Home() {
     if (!file.type.startsWith("image/")) { setError("Выбери изображение."); return; }
     if (file.size > 5 * 1024 * 1024) { setError("Фото должно быть до 5 МБ."); return; }
     setError(""); setCurrent(null); setDetail(null); setNotice("");
-    const reader = new FileReader();
-    reader.onload = () => {
-      setPhoto(String(reader.result)); setMimeType(file.type || "image/jpeg");
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressed = await compressImage(file);
+      setPhoto(compressed.dataUrl); setMimeType(compressed.mimeType);
+    } catch {
+      setError("Не удалось прочитать изображение. Попробуй другое фото.");
+    }
     event.target.value = "";
   };
 
