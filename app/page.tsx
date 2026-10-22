@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { ScanResult, CollectionItem } from "@/lib/types";
 
 declare global {
@@ -63,11 +63,27 @@ export default function Home() {
     const tg = window.Telegram?.WebApp;
     tg?.ready?.(); tg?.expand?.();
     tg?.setHeaderColor?.("#15161b"); tg?.setBackgroundColor?.("#15161b");
-    setTelegramInitData(tg?.initData || "");
+    const initData = tg?.initData || "";
+    setTelegramInitData(initData);
     const user = tg?.initDataUnsafe?.user;
     if (user) setTelegramName(user.first_name || "Пользователь");
     setItems(readLocal());
     try { setFavorites(JSON.parse(localStorage.getItem(FAVORITES_KEY) || "[]") as string[]); } catch { /* empty */ }
+    if (initData) {
+      fetch("/api/collection", { headers: { "x-telegram-init-data": initData } })
+        .then(async response => response.ok ? response.json() : null)
+        .then(data => {
+          if (Array.isArray(data?.items)) {
+            setItems(local => {
+              const merged = new Map<string, Stored>();
+              for (const item of local) merged.set(item.id, item);
+              for (const item of data.items as Stored[]) merged.set(item.id, item);
+              return [...merged.values()].sort((a, b) => new Date(b.savedAt || b.createdAt).getTime() - new Date(a.savedAt || a.createdAt).getTime());
+            });
+          }
+        })
+        .catch(() => { /* local collection remains available */ });
+    }
   }, []);
 
   useEffect(() => {
