@@ -24,3 +24,22 @@ The UI can be previewed without credentials; AI research and cloud persistence r
 
 ## Telegram
 Set the bot's Mini App URL to the deployed HTTPS URL. Telegram identity is verified server-side from `initData`; the client-supplied user ID is never trusted.
+
+## Deployment checklist
+
+1. Import `Nullb1t-hub/Findly` into Vercel when ready to deploy.
+2. Add environment variables in Vercel Project Settings:
+   - `TELEGRAM_BOT_TOKEN`: token from BotFather (server-only; never use a `NEXT_PUBLIC_` prefix).
+   - `GEMINI_API_KEY`: key for Gemini API image understanding and Google Search grounding.
+   - `DATABASE_URL`: connection string for a PostgreSQL-compatible provider if you want collection sync across devices and shared collections.
+   - `DATABASE_SSL=true` when required by the provider.
+3. Redeploy after setting variables. The database tables are created on first authenticated API use.
+4. Set the Telegram bot's Mini App URL to the deployed HTTPS URL in BotFather.
+5. Open the app from Telegram and verify scanning, saving, re-opening cards, and sharing an invite.
+
+## Storage and service notes
+
+- Without `DATABASE_URL`, saved items remain in that browser's local storage. They do not sync between devices and shared collections are unavailable.
+- Without `GEMINI_API_KEY`, the app shell and local collection remain usable, but AI research cannot run.
+- API keys belong only in Vercel environment variables or local `.env.local`; never commit them.
+- Google Search grounding and third-party marketplace coverage depend on provider quotas and the public data available for each site. Prices are estimates, not guaranteed sale proceeds.
