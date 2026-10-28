@@ -4,7 +4,7 @@ declare global {
   var findlyPool: Pool | undefined;
 }
 
-function getPool() {
+export function getPool() {
   if (!process.env.DATABASE_URL) return null;
   if (!global.findlyPool) {
     global.findlyPool = new Pool({
@@ -62,7 +62,12 @@ export async function ensureSchema() {
         expires_at TIMESTAMPTZ NOT NULL,
         created_by TEXT NOT NULL
       );
-    `).then(() => undefined);
+    `).then(() => undefined).catch((error) => {
+      // Do not cache a rejected initialization promise forever. A transient
+      // database/network failure must be retried on the next request.
+      schemaReady = null;
+      throw error;
+    });
   }
   await schemaReady;
   return true;
