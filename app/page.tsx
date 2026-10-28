@@ -190,13 +190,25 @@ export default function Home() {
         headers: { "Content-Type": "application/json", ...(telegramInitData ? { "x-telegram-init-data": telegramInitData } : {}) },
         body: JSON.stringify({ image: photo, mimeType, country, currency, extra }),
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error("Не получилось найти надёжные аналоги. Попробуй ещё раз.");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        console.error("[Findly] Analyze API error:", response.status, data.error || "unknown", data.message || "");
+        if (data.error === "telegram_auth_failed") {
+          throw new Error("Не удалось подтвердить Telegram. Закрой Findly и заново открой его через своего бота.");
+        }
+        if (typeof data.message === "string" && data.message.trim()) throw new Error(data.message);
+        if (data.error === "ai_not_configured") {
+          throw new Error("Не настроен ключ Gemini на сервере. Проверь GEMINI_API_KEY в Vercel.");
+        }
+        throw new Error(`Сервер не завершил анализ (HTTP ${response.status}). Попробуй ещё раз чуть позже.`);
+      }
+      if (!data.result) throw new Error("Сервер не вернул результат анализа. Попробуй ещё раз.");
       setCurrent(data.result as ScanResult);
       setRecentPhotos(old => old.map((item, index) => index === 0 ? { ...item, title: data.result.title || item.title, priceLabel: data.result.price?.low != null && data.result.price?.high != null ? money(data.result.price.low, data.result.price.currency) + " – " + money(data.result.price.high, data.result.price.currency) : "Оценка уточняется" } : item));
       haptic("success");
     } catch (e) {
-      setError("Не получилось завершить поиск. Попробуй ещё раз.");
+      console.error("[Findly] Analyze request failed:", e);
+      setError(e instanceof Error ? e.message : "Не получилось завершить поиск. Проверь соединение и попробуй ещё раз.");
     } finally { setLoading(false); }
   };
 
