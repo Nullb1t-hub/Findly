@@ -57,8 +57,6 @@ export async function POST(request: NextRequest) {
     const base64 = image.split(",")[1];
     if (!base64) return NextResponse.json({ error: "invalid_image" }, { status: 400 });
 
-    const client = new GoogleGenAI({ apiKey });
-
     const prompt = `You are Findly, a careful visual item-identification and resale research assistant. Analyze the attached photo and identify the most likely exact item. User market: ${country}; preferred currency: ${currency}. Additional notes: ${extra || "none"}.
 You MUST use Google Search to research current listings and prices for the identified item, prioritizing the user market. Search exact brand/model plus used/second-hand/sold-price terms and reputable local marketplaces. Do not confuse visually similar models.
 Return only valid JSON with this schema:
