@@ -39,7 +39,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "telegram_auth_failed" }, { status: 401 });
     }
   }
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;\n  if (!apiKey) {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  if (!apiKey) {
     return NextResponse.json({ error: "ai_not_configured", message: "Добавьте GEMINI_API_KEY в настройки окружения Vercel." }, { status: 503 });
   }
 
