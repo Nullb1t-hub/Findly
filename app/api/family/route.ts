@@ -14,7 +14,7 @@ function getUser(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const user = getUser(request);
   if (!user) return NextResponse.json({ error: "telegram_auth_failed" }, { status: 401 });
-  if (!(await ensureSchema())) return NextResponse.json({ error: "database_not_configured" }, { status: 503 });
+  if (!(await ensureSchema())) return NextResponse.json({ error: "database_not_configured", message: "Общие коллекции не подключены: в Vercel нужно настроить DATABASE_URL." }, { status: 503 });
   const { getPool } = await import("@/lib/db-internal");
   const pool = getPool();
   await pool.query(
@@ -41,6 +41,7 @@ export async function POST(request: NextRequest) {
   const pool = getPool();
   const body = await request.json().catch(() => ({}));
   const action = String(body.action || "");
+  try {
   if (action === "create") {
     const name = String(body.name || "Общая коллекция").trim().slice(0, 80);
     const id = randomBytes(12).toString("hex");
@@ -70,4 +71,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ collection: collection.rows[0] });
   }
   return NextResponse.json({ error: "unknown_action" }, { status: 400 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown database error";
+    console.error("[Findly] Family action failed:", { action, message });
+    return NextResponse.json({
+      error: "family_action_failed",
+      message: "Не удалось сохранить общую коллекцию. Проверь подключение базы данных (DATABASE_URL) в Vercel.",
+    }, { status: 500 });
+  }
 }
