@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { TouchEvent } from "react";
 import type { ScanResult, CollectionItem } from "@/lib/types";
 
 declare global {
@@ -68,6 +69,7 @@ export default function Home() {
   const [joinToken, setJoinToken] = useState("");
   const [familyBusy, setFamilyBusy] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [marketOpen, setMarketOpen] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const [newCollectionOpen, setNewCollectionOpen] = useState(false);
@@ -138,10 +140,10 @@ export default function Home() {
   const savedItems = useMemo(() => items.filter(item => favorites.includes(item.id) && item.status !== "archived"), [items, favorites]);
 
   const haptic = (style = "light") => window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.(style);
-  const stopCamera = () => { streamRef.current?.getTracks().forEach(track => track.stop()); streamRef.current = null; setCameraOpen(false); };
+  const stopCamera = () => { streamRef.current?.getTracks().forEach(track => track.stop()); streamRef.current = null; setCameraStream(null); setCameraOpen(false); };
   const openCamera = async () => {
     haptic(); setCameraError(""); setCameraOpen(true);
-    try { if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera unavailable"); const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 2560 }, height: { ideal: 1440 } }, audio: false }); streamRef.current = stream; if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); } }
+    try { if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera unavailable"); const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 2560 }, height: { ideal: 1440 } }, audio: false }); streamRef.current = stream; setCameraStream(stream); }
     catch { setCameraError("Разреши доступ к камере в настройках Telegram и попробуй ещё раз."); }
   };
   const capturePhoto = () => { const video = videoRef.current; if (!video?.videoWidth || !video.videoHeight) return; const canvas = document.createElement("canvas"); const scale = Math.min(1, 2200 / Math.max(video.videoWidth, video.videoHeight)); canvas.width = Math.round(video.videoWidth * scale); canvas.height = Math.round(video.videoHeight * scale); const context = canvas.getContext("2d"); if (!context) return; context.drawImage(video, 0, 0, canvas.width, canvas.height); setPhoto(canvas.toDataURL("image/jpeg", .9)); setMimeType("image/jpeg"); setCurrent(null); setError(""); stopCamera(); setMarketOpen(true); haptic("medium"); };
@@ -221,7 +223,8 @@ export default function Home() {
   };
   const resetScan = () => { setCurrent(null); setPhoto(null); setError(""); setExtra(""); setMarketOpen(false); };
   useEffect(() => () => { streamRef.current?.getTracks().forEach(track => track.stop()); }, []);
-  const onTouchStart = (event: React.TouchEvent<HTMLElement>) => setTouchStartX(event.touches[0]?.clientX ?? null);
+  useEffect(() => { const video = videoRef.current; if (cameraOpen && video && cameraStream) { video.srcObject = cameraStream; void video.play().catch(() => undefined); } }, [cameraOpen, cameraStream]);
+  const onTouchStart = (event: TouchEvent<HTMLElement>) => setTouchStartX(event.touches[0]?.clientX ?? null);
   const onTouchEnd = (event: React.TouchEvent<HTMLElement>) => { if (touchStartX === null) return; const dx = (event.changedTouches[0]?.clientX ?? touchStartX) - touchStartX; if (Math.abs(dx) > 85) { if (dx < 0) { setTab("collection"); setCurrent(null); } else setTab("scan"); } setTouchStartX(null); };
 
   return (
