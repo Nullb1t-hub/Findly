@@ -78,7 +78,8 @@ Rules: Search the exact brand/model first, then close visual matches. Include on
     }];
     const configuredModel = process.env.GEMINI_MODEL?.trim();
     // Ignore the retired default if it is still configured in Vercel.
-    const model = !configuredModel || configuredModel === "gemini-2.5-flash" ? "gemini-3.8-flash" : configuredModel;
+    const model = !configuredModel || configuredModel === "gemini-2.5-flash" ? "gemini-3.5-flash-lite" : configuredModel;
+    const fallbackModel = model === "gemini-3.5-flash-lite" ? "gemini-3.8-flash" : "gemini-3.5-flash-lite";
     let raw: Record<string, unknown>;
     try {
       // Grounded search is used first. Avoid forcing JSON MIME mode in the same
@@ -90,19 +91,29 @@ Rules: Search the exact brand/model first, then close visual matches. Include on
       });
       raw = extractJson(researched.text || "") as Record<string, unknown>;
     } catch (searchError) {
-      console.error("[Findly] Gemini grounded search failed; retrying vision-only analysis.", searchError);
-      // A second pass keeps image identification working when Search grounding
-      // is unavailable. It must not fabricate sources or comparable listings.
-      const retryPrompt = prompt + "\n\nThis is a vision-only fallback: do not claim you searched the web. Return empty listings and sources unless URLs are present in the input. If prices cannot be supported, use null values and low confidence.";
-      const retry = await client.models.generateContent({
-        model,
-        contents: [{ role: "user", parts: [{ text: retryPrompt }, { inlineData: { mimeType, data: base64 } }] }],
-        config: { responseMimeType: "application/json", temperature: 0.2 },
-      });
-      raw = extractJson(retry.text || "") as Record<string, unknown>;
-      raw.listings = [];
-      raw.sources = [];
-      raw.price = { ...(typeof raw.price === "object" && raw.price ? raw.price as Record<string, unknown> : {}), confidence: "low", confidenceReason: "Предварительная оценка по фото; поиск актуальных объявлений сейчас недоступен." };
+      console.error("[Findly] Gemini grounded search failed; trying vision-only on fallback model.", searchError);
+      // Search grounding can exhaust a model's separate quota or become overloaded.
+      // Retry image identification with a different supported model so the user can
+      // still receive a cautious visual result without fabricated market sources.
+      const retryPrompt = prompt + "\n\nThis is a vision-only fallback: do not claim you searched the web. Return empty listings and sources. If prices cannot be supported from the image alone, use null values and low confidence.";
+      try {
+        const retry = await client.models.generateContent({
+          model: fallbackModel,
+          contents: [{ role: "user", parts: [{ text: retryPrompt }, { inlineData: { mimeType, data: base64 } }] }],
+          config: { responseMimeType: "application/json", temperature: 0.2 },
+        });
+        raw = extractJson(retry.text || "") as Record<string, unknown>;
+        raw.listings = [];
+        raw.sources = [];
+        raw.price = {
+          ...(typeof raw.price === "object" && raw.price ? raw.price as Record<string, unknown> : {}),
+          confidence: "low",
+          confidenceReason: "Предварительная оценка только по фото; поиск актуальных объявлений сейчас недоступен.",
+        };
+      } catch (visionError) {
+        console.error("[Findly] Gemini vision fallback failed.", visionError);
+        throw visionError;
+      }
     }
     const safe = {
       ...fallback,
