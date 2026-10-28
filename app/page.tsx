@@ -61,6 +61,7 @@ export default function Home() {
   const [telegramStatus, setTelegramStatus] = useState<"checking" | "connected" | "not_connected" | "not_configured">("checking");
   const [telegramUsername, setTelegramUsername] = useState("");
   const [telegramPhoto, setTelegramPhoto] = useState("");
+  const [logoFailed, setLogoFailed] = useState(false);
   const [notice, setNotice] = useState("");
   const [familyCollections, setFamilyCollections] = useState<FamilyCollection[]>([]);
   const [activeCollectionId, setActiveCollectionId] = useState("");
@@ -190,12 +191,12 @@ export default function Home() {
     try {
       const response = await fetch("/api/family", { method: "POST", headers: { "Content-Type": "application/json", "x-telegram-init-data": telegramInitData }, body: JSON.stringify(body) });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error === "database_not_configured" ? "Для общих коллекций нужно подключить базу данных." : data.error === "invite_expired" ? "Код приглашения истёк или уже использован." : "Не удалось выполнить действие.");
+      if (!response.ok) throw new Error("Не получилось выполнить действие. Попробуй ещё раз.");
       const list = await fetch("/api/family", { headers: { "x-telegram-init-data": telegramInitData } });
       if (list.ok) { const refreshed = await list.json(); setFamilyCollections(refreshed.collections || []); }
       return data;
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Ошибка семейной коллекции.");
+      setError("Не получилось выполнить действие. Попробуй ещё раз.");
       return null;
     } finally { setFamilyBusy(false); }
   };
@@ -225,7 +226,7 @@ export default function Home() {
     <main className="app-shell" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
       <header className="topbar">
         <button className="brand-lockup" onClick={() => { setTab("scan"); setCurrent(null); }} aria-label="Findly home">
-          <span className="brand-mark brand-logo"><Image src="/image.png" alt="Findly" width={42} height={42} unoptimized/></span>
+          <span className="brand-mark brand-logo">{logoFailed ? <span className="brand-logo-fallback">F</span> : <Image src="/image.png" alt="Findly" width={42} height={42} unoptimized onError={() => setLogoFailed(true)}/>}</span>
           <span><strong>findly</strong></span>
         </button>
         <div className={`profile-pill ${telegramStatus === "connected" ? "profile-connected" : "profile-disconnected"}`} title={telegramStatus === "connected" ? "Telegram подключён" : "Telegram не подключён"}><span className="profile-dot">{telegramPhoto ? <Image src={telegramPhoto} alt="" width={28} height={28} unoptimized/> : telegramStatus === "connected" ? telegramName.slice(0, 1).toUpperCase() : "↗"}</span><span>{telegramStatus === "connected" ? (telegramUsername ? `@${telegramUsername}` : telegramName) : telegramStatus === "checking" ? "Проверяем…" : telegramStatus === "not_configured" ? "Нужна настройка" : "Подключи Telegram"}</span></div>
@@ -235,11 +236,10 @@ export default function Home() {
         {tab === "scan" && !current && (
           <>
             
-            <button className={photo ? "scanner-card has-photo" : "scanner-card"} onClick={openCamera}>
+            <div className={photo ? "scanner-card has-photo" : "scanner-card"}>
               {photo ? <Image className="selected-photo" src={photo} alt="Выбранный предмет" width={1200} height={800} unoptimized/> : <span className="scanner-visual"><span className="scan-ring ring-one"/><span className="scan-ring ring-two"/><span className="scan-core"><svg viewBox="0 0 24 24"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h2l1.3-1.5h4.4L15.5 5h2A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5Z"/><circle cx="12" cy="12" r="3.5"/></svg></span><span className="spark spark-a">✳</span><span className="spark spark-b">✧</span></span>}
               <span className="scanner-label">{photo ? "Фото готово" : "Камера"}</span>
-              <span className="scan-action">{photo ? "Переснять фото" : "Запустить камеру"} <span>↗</span></span>
-            </button>
+            </div>
             {photo && <div className="selected-actions"><button className="button-secondary" onClick={resetScan}>Переснять</button><button className="button-primary" onClick={() => setMarketOpen(true)}>Продолжить <span>→</span></button></div>}
             <button className="camera-launch" onClick={openCamera}><span className="camera-launch-icon">⌾</span><span>{photo ? "Сфотографировать ещё раз" : "Сфотографировать"}</span><span className="camera-launch-arrow">↗</span></button>
             <div className="section-title"><div><span className="eyebrow">МОИ НАХОДКИ</span><h2>Коллекция</h2></div><button className="text-link" onClick={() => setTab("collection")}>Открыть <span>↗</span></button></div>
