@@ -159,19 +159,39 @@ export default function Home() {
     if (streamRef.current) { setCameraStream(streamRef.current); return; }
     try {
       if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera unavailable");
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 2560 }, height: { ideal: 1440 } }, audio: false });
-      streamRef.current = stream; setCameraStream(stream);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          frameRate: { ideal: 30, max: 30 },
+        },
+        audio: false,
+      });
+      streamRef.current = stream;
+      const track = stream.getVideoTracks()[0];
+      // Use continuous autofocus/exposure when the device browser exposes them.
+      // Unsupported camera controls are ignored so older phones still work.
+      try {
+        const capabilities = track.getCapabilities?.() as MediaTrackCapabilities & { focusMode?: string[]; exposureMode?: string[]; whiteBalanceMode?: string[] };
+        const advanced: MediaTrackConstraintSet[] = [];
+        if (capabilities?.focusMode?.includes("continuous")) advanced.push({ focusMode: "continuous" } as MediaTrackConstraintSet);
+        if (capabilities?.exposureMode?.includes("continuous")) advanced.push({ exposureMode: "continuous" } as MediaTrackConstraintSet);
+        if (capabilities?.whiteBalanceMode?.includes("continuous")) advanced.push({ whiteBalanceMode: "continuous" } as MediaTrackConstraintSet);
+        if (advanced.length) await track.applyConstraints({ advanced });
+      } catch { /* camera controls depend on the phone and WebView */ }
+      setCameraStream(stream);
     } catch { setCameraError("Разреши доступ к камере, чтобы сделать снимок."); }
   };
   const capturePhoto = () => {
     const video = cameraOpen ? videoRef.current : inlineVideoRef.current;
     if (!video?.videoWidth || !video.videoHeight) return;
     const canvas = document.createElement("canvas");
-    const scale = Math.min(1, 2600 / Math.max(video.videoWidth, video.videoHeight));
+    const scale = Math.min(1, 1920 / Math.max(video.videoWidth, video.videoHeight));
     canvas.width = Math.round(video.videoWidth * scale); canvas.height = Math.round(video.videoHeight * scale);
     const context = canvas.getContext("2d"); if (!context) return;
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL("image/jpeg", .94);
+    const dataUrl = canvas.toDataURL("image/jpeg", .84);
     const thumb = document.createElement("canvas");
     const thumbScale = Math.min(1, 520 / Math.max(canvas.width, canvas.height));
     thumb.width = Math.round(canvas.width * thumbScale); thumb.height = Math.round(canvas.height * thumbScale);
@@ -240,13 +260,20 @@ export default function Home() {
     setFamilyBusy(true);
     try {
       const response = await fetch("/api/family", { method: "POST", headers: { "Content-Type": "application/json", "x-telegram-init-data": telegramInitData }, body: JSON.stringify(body) });
-      const data = await response.json();
-      if (!response.ok) throw new Error("Не получилось выполнить действие. Попробуй ещё раз.");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        console.error("[Findly] Family API error:", response.status, data.error || "unknown", data.message || "");
+        if (data.error === "database_not_configured") throw new Error("Общие коллекции требуют подключённую базу данных. В Vercel добавь DATABASE_URL и сделай Redeploy.");
+        if (data.error === "telegram_auth_failed") throw new Error("Не удалось подтвердить Telegram. Закрой Findly и заново открой через бота.");
+        if (typeof data.message === "string" && data.message) throw new Error(data.message);
+        throw new Error(`Не удалось выполнить действие (HTTP ${response.status}). Проверь настройки базы данных в Vercel.`);
+      }
       const list = await fetch("/api/family", { headers: { "x-telegram-init-data": telegramInitData } });
       if (list.ok) { const refreshed = await list.json(); setFamilyCollections(refreshed.collections || []); }
       return data;
     } catch (e) {
-      setError("Не получилось выполнить действие. Попробуй ещё раз.");
+      console.error("[Findly] Family action failed:", e);
+      setError(e instanceof Error ? e.message : "Не получилось выполнить действие. Попробуй ещё раз.");
       return null;
     } finally { setFamilyBusy(false); }
   };
