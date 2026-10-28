@@ -117,8 +117,26 @@ Rules: Search the exact brand/model first, then close visual matches. Include on
     };
     return NextResponse.json({ result: safe });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "unknown";
-    console.error("[Findly] Analysis failed:", message);
-    return NextResponse.json({ error: "analysis_failed", message: "Не получилось оценить этот предмет. Попробуй ещё раз с более чётким фото.", detail: process.env.NODE_ENV === "development" ? message : undefined }, { status: 502 });
+    const message = error instanceof Error ? error.message : String(error || "unknown");
+    const err = error as { status?: number; code?: string; message?: string };
+    const status = Number(err?.status || 0);
+    const rawCode = String(err?.code || "");
+    console.error("[Findly] Analysis failed:", { status, code: rawCode, message });
+    let userMessage = "Сервис оценки временно не ответил. Подожди немного и попробуй ещё раз.";
+    let errorCode = "analysis_failed";
+    if (status === 429 || /quota|resource.?exhausted|rate.?limit/i.test(message)) {
+      userMessage = "У Gemini закончился лимит запросов или временно слишком много запросов. Проверь лимиты Google AI Studio и попробуй позже.";
+      errorCode = "gemini_quota";
+    } else if (status === 401 || status === 403 || /api.?key|permission.?denied|unauthorized/i.test(message)) {
+      userMessage = "Gemini не принимает API-ключ. Проверь GEMINI_API_KEY в Vercel и доступ ключа к Gemini API.";
+      errorCode = "gemini_key";
+    } else if (/model.*not found|not found.*model|unsupported model/i.test(message)) {
+      userMessage = "Указанная модель Gemini недоступна. Удали GEMINI_MODEL из Vercel или укажи поддерживаемую модель.";
+      errorCode = "gemini_model";
+    } else if (/json|parse|unexpected token|model did not return/i.test(message)) {
+      userMessage = "Gemini вернул ответ в неожиданном формате. Попробуй ещё раз.";
+      errorCode = "gemini_response_format";
+    }
+    return NextResponse.json({ error: errorCode, message: userMessage, requestId: crypto.randomUUID() }, { status: 502 });
   }
 }
