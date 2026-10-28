@@ -21,10 +21,12 @@ declare global {
 
 type Tab = "scan" | "collection" | "saved";
 type Stored = CollectionItem & { photoDataUrl?: string };
+type RecentPhoto = { id: string; photoDataUrl: string; title: string; priceLabel?: string; createdAt: string };
 type FamilyCollection = { id: string; name: string; owner_id?: string; role: string; item_count?: number };
 
 const STORAGE_KEY = "findly.collection.v1";
 const FAVORITES_KEY = "findly.favorites.v1";
+const RECENT_KEY = "findly.recent-photos.v1";
 const money = (value: number | null | undefined, currency = "EUR") => {
   if (value == null || !Number.isFinite(value)) return "Нет данных";
   try { return new Intl.NumberFormat("ru-RU", { style: "currency", currency, maximumFractionDigits: 0 }).format(value); }
@@ -52,6 +54,7 @@ export default function Home() {
   const [tab, setTab] = useState<Tab>("scan");
   const [items, setItems] = useState<Stored[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
+  const [recentPhotos, setRecentPhotos] = useState<RecentPhoto[]>([]);
   const [current, setCurrent] = useState<ScanResult | null>(null);
   const [detail, setDetail] = useState<Stored | null>(null);
   const [photo, setPhoto] = useState<string | null>(null);
@@ -112,6 +115,7 @@ export default function Home() {
       .catch(() => setTelegramStatus("not_connected"));
     setItems(readLocal());
     try { setFavorites(JSON.parse(localStorage.getItem(FAVORITES_KEY) || "[]") as string[]); } catch { /* empty */ }
+    try { setRecentPhotos(JSON.parse(localStorage.getItem(RECENT_KEY) || "[]") as RecentPhoto[]); } catch { /* empty */ }
     if (initData) {
       fetch("/api/collection", { headers: { "x-telegram-init-data": initData } })
         .then(async response => response.ok ? response.json() : null)
@@ -143,6 +147,7 @@ export default function Home() {
   useEffect(() => {
     try { localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites)); } catch { /* ignore */ }
   }, [favorites]);
+  useEffect(() => { try { localStorage.setItem(RECENT_KEY, JSON.stringify(recentPhotos.slice(0, 5))); } catch { /* recent previews are best-effort */ } }, [recentPhotos]);
 
   const activeItems = useMemo(() => items.filter(item => item.status !== "archived" && (filter === "all" || item.status === filter) && (`${item.title} ${item.brand || ""} ${item.category}`).toLowerCase().includes(query.toLowerCase())), [items, filter, query]);
   const savedItems = useMemo(() => items.filter(item => favorites.includes(item.id) && item.status !== "archived"), [items, favorites]);
@@ -166,7 +171,13 @@ export default function Home() {
     canvas.width = Math.round(video.videoWidth * scale); canvas.height = Math.round(video.videoHeight * scale);
     const context = canvas.getContext("2d"); if (!context) return;
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    setPhoto(canvas.toDataURL("image/jpeg", .94)); setMimeType("image/jpeg"); setCurrent(null); setError("");
+    const dataUrl = canvas.toDataURL("image/jpeg", .94);
+    const thumb = document.createElement("canvas");
+    const thumbScale = Math.min(1, 520 / Math.max(canvas.width, canvas.height));
+    thumb.width = Math.round(canvas.width * thumbScale); thumb.height = Math.round(canvas.height * thumbScale);
+    const thumbContext = thumb.getContext("2d"); if (thumbContext) thumbContext.drawImage(canvas, 0, 0, thumb.width, thumb.height);
+    setRecentPhotos(old => [{ id: crypto.randomUUID(), photoDataUrl: thumb.toDataURL("image/jpeg", .72), title: "Новая фотография", createdAt: new Date().toISOString() }, ...old].slice(0, 5));
+    setPhoto(dataUrl); setMimeType("image/jpeg"); setCurrent(null); setError("");
     streamRef.current?.getTracks().forEach(track => track.stop()); streamRef.current = null; setCameraStream(null); setCameraOpen(false); setMarketOpen(true); haptic("medium");
   };
 
@@ -182,6 +193,7 @@ export default function Home() {
       const data = await response.json();
       if (!response.ok) throw new Error("Не получилось найти надёжные аналоги. Попробуй ещё раз.");
       setCurrent(data.result as ScanResult);
+      setRecentPhotos(old => old.map((item, index) => index === 0 ? { ...item, title: data.result.title || item.title, priceLabel: data.result.price?.low != null && data.result.price?.high != null ? money(data.result.price.low, data.result.price.currency) + " – " + money(data.result.price.high, data.result.price.currency) : "Оценка уточняется" } : item));
       haptic("success");
     } catch (e) {
       setError("Не получилось завершить поиск. Попробуй ещё раз.");
@@ -279,7 +291,7 @@ export default function Home() {
             </div>
             {photo && <div className="selected-actions"><button className="button-secondary" onClick={resetScan}>Переснять</button><button className="button-primary" onClick={() => setMarketOpen(true)}>Продолжить <span>→</span></button></div>}
             <div className="section-title"><div><span className="eyebrow">НЕДАВНИЕ СНИМКИ</span><h2>Последние фото</h2></div><button className="text-link" onClick={() => setTab("collection")}>Коллекции <span>→</span></button></div>
-            {items.length ? <div className="item-grid">{items.filter(x => x.status !== "archived").slice(0, 4).map(item => <ItemCard key={item.id} item={item} onClick={() => setDetail(item)} favorite={favorites.includes(item.id)} onFavorite={() => toggleFavorite(item.id)}/>)}</div> : <div className="empty-mini"><span className="empty-glyph"><Glyph name="box"/></span><div><strong>Пока пусто</strong></div></div>}
+            {recentPhotos.length ? <div className="recent-photo-strip">{recentPhotos.slice(0, 5).map(item => <button className="recent-photo-card" key={item.id} onClick={() => setNotice(item.title + (item.priceLabel ? " · " + item.priceLabel : ""))}><Image src={item.photoDataUrl} alt={item.title} width={520} height={520} unoptimized/><span><strong>{item.title}</strong><small>{item.priceLabel || new Date(item.createdAt).toLocaleDateString("ru-RU")}</small></span></button>)}</div> : <div className="empty-mini"><span className="empty-glyph"><Glyph name="box"/></span><div><strong>Пока пусто</strong></div></div>}
           </>
         )}
 
