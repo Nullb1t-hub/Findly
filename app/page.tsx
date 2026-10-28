@@ -174,8 +174,8 @@ export default function Home() {
     if (telegramInitData) {
       try {
         const res = await fetch("/api/collection", { method: "POST", headers: { "Content-Type": "application/json", "x-telegram-init-data": telegramInitData }, body: JSON.stringify({ item }) });
-        if (!res.ok) setNotice("Сохранено на этом устройстве. Для облачной синхронизации проверь подключение базы данных.");
-      } catch { setNotice("Сохранено на этом устройстве. Облачная синхронизация пока недоступна."); }
+        if (!res.ok) setNotice("Сохранено на устройстве");
+      } catch { setNotice("Сохранено на устройстве"); }
     }
   };
 
@@ -190,7 +190,7 @@ export default function Home() {
 
   const toggleFavorite = (id: string) => setFavorites(old => old.includes(id) ? old.filter(x => x !== id) : [id, ...old]);
   const familyAction = async (body: Record<string, string>) => {
-    if (!telegramInitData) { setNotice("Открой Findly через Telegram, чтобы создавать общие коллекции."); return null; }
+    if (!telegramInitData) { setNotice("Открой Findly из чата бота"); return null; }
     setFamilyBusy(true);
     try {
       const response = await fetch("/api/family", { method: "POST", headers: { "Content-Type": "application/json", "x-telegram-init-data": telegramInitData }, body: JSON.stringify(body) });
@@ -234,10 +234,10 @@ export default function Home() {
           <span className="brand-mark brand-logo">{logoFailed ? <span className="brand-logo-fallback">F</span> : <Image src="/image.png" alt="Findly" width={42} height={42} unoptimized onError={() => setLogoFailed(true)}/>}</span>
           <span><strong>findly</strong></span>
         </button>
-        <div className={`profile-pill ${telegramStatus === "connected" ? "profile-connected" : "profile-disconnected"}`} title={telegramStatus === "connected" ? "Telegram подключён" : "Telegram не подключён"}><span className="profile-dot">{telegramPhoto ? <Image src={telegramPhoto} alt="" width={28} height={28} unoptimized/> : telegramStatus === "connected" ? telegramName.slice(0, 1).toUpperCase() : "↗"}</span><span>{telegramStatus === "connected" ? (telegramUsername ? `@${telegramUsername}` : telegramName) : telegramStatus === "checking" ? "Проверяем…" : telegramStatus === "not_configured" ? "Нужна настройка" : "Подключи Telegram"}</span></div>
+        <div className="profile-pill" title={telegramName}><span className="profile-dot">{telegramPhoto ? <Image src={telegramPhoto} alt="" width={28} height={28} unoptimized/> : telegramName.slice(0, 1).toUpperCase()}</span><span>{telegramUsername ? `@${telegramUsername}` : telegramName}</span></div>
       </header>
 
-      <section className="page-content">
+      <section key={tab} className="page-content">
         {tab === "scan" && !current && (
           <>
             
@@ -248,7 +248,7 @@ export default function Home() {
             {photo && <div className="selected-actions"><button className="button-secondary" onClick={resetScan}>Переснять</button><button className="button-primary" onClick={() => setMarketOpen(true)}>Продолжить <span>→</span></button></div>}
             <button className="camera-launch" onClick={openCamera}><span className="camera-launch-icon">⌾</span><span>{photo ? "Сфотографировать ещё раз" : "Сфотографировать"}</span><span className="camera-launch-arrow">↗</span></button>
             <div className="section-title"><div><span className="eyebrow">МОИ НАХОДКИ</span><h2>Коллекция</h2></div><button className="text-link" onClick={() => setTab("collection")}>Открыть <span>↗</span></button></div>
-            {items.length ? <div className="item-grid">{items.filter(x => x.status !== "archived").slice(0, 4).map(item => <ItemCard key={item.id} item={item} onClick={() => setDetail(item)} favorite={favorites.includes(item.id)} onFavorite={() => toggleFavorite(item.id)}/>)}</div> : <div className="empty-mini"><span className="empty-glyph">◇</span><div><strong>Здесь начнутся твои находки</strong><p>Сканируй первый предмет и сохраняй всё, что захочешь.</p></div></div>}
+            {items.length ? <div className="item-grid">{items.filter(x => x.status !== "archived").slice(0, 4).map(item => <ItemCard key={item.id} item={item} onClick={() => setDetail(item)} favorite={favorites.includes(item.id)} onFavorite={() => toggleFavorite(item.id)}/>)}</div> : <div className="empty-mini"><span className="empty-glyph">◇</span><div><strong>Пока пусто</strong></div></div>}
           </>
         )}
 
