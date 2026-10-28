@@ -46,9 +46,15 @@ export async function ensureSchema() {
         collection_id TEXT NOT NULL REFERENCES findly_collections(id) ON DELETE CASCADE,
         user_id TEXT NOT NULL,
         role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner','editor','viewer')),
+        first_name TEXT,
+        username TEXT,
+        photo_url TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         PRIMARY KEY (collection_id, user_id)
       );
+      ALTER TABLE findly_members ADD COLUMN IF NOT EXISTS first_name TEXT;
+      ALTER TABLE findly_members ADD COLUMN IF NOT EXISTS username TEXT;
+      ALTER TABLE findly_members ADD COLUMN IF NOT EXISTS photo_url TEXT;
       CREATE TABLE IF NOT EXISTS findly_invites (
         token_hash TEXT PRIMARY KEY,
         collection_id TEXT NOT NULL REFERENCES findly_collections(id) ON DELETE CASCADE,
