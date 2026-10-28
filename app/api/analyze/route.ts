@@ -59,47 +59,47 @@ export async function POST(request: NextRequest) {
 
     const client = new GoogleGenAI({ apiKey });
 
-    const prompt = `You are Findly, a careful item-identification and resale assistant. Analyze the attached photo visually. Do not claim you searched the web or verified current listings. User's primary market: ${country}; preferred currency: ${currency}. Additional notes: ${extra || "none"}.
+    const prompt = `You are Findly, a careful visual item-identification and resale research assistant. Analyze the attached photo and identify the most likely exact item. User market: ${country}; preferred currency: ${currency}. Additional notes: ${extra || "none"}.
+You MUST use Google Search to research current listings and prices for the identified item, prioritizing the user market. Search exact brand/model plus used/second-hand/sold-price terms and reputable local marketplaces. Do not confuse visually similar models.
 Return only valid JSON with this schema:
-{
-"title":"short item name in Russian","brand":"known brand or empty","model":"model or empty","category":"category in Russian","description":"specific visual identification and distinguishing details in Russian","condition":"visible condition only; don't infer hidden defects","estimatedAge":"estimate or empty","rarity":"ordinary|possibly_collectible|potentially_rare|unknown","rarityReason":"why, with uncertainty stated",
-"price":{"low":number|null,"high":number|null,"currency":"ISO currency code","quickSale":number|null,"suggestedListing":number|null,"confidence":"low|medium|high","confidenceReason":"brief rationale"},
-"markets":[{"country":"country","currency":"ISO currency","low":number|null,"high":number|null,"notes":"fees/shipping/demand caveats"}],
-"listings":[{"title":"listing title","price":number|null,"currency":"ISO currency","condition":"condition or unknown","marketplace":"site","url":"absolute https URL","evidenceType":"active_listing|sold|reference"}],
-"followUpQuestions":["questions if photos/details needed"],
-"listingDraft":{"title":"honest sale title","description":"honest concise description; don't invent condition","hashtags":["#tag"]},
-"sources":["URLs actually consulted"]
-}
-Rules: Do not invent listings, prices, sales, sources, brands, or model numbers. Estimate only when visual evidence supports it; otherwise use null prices and low confidence. Clearly state uncertainty and that current market prices were not verified. If the item may be counterfeit or high-risk, say so. If more photos are required, add up to 3 concise follow-up questions. Keep results in Russian.`;
+{"title":"short item name in Russian","brand":"known brand or empty","model":"model or empty","category":"category in Russian","description":"specific visual identification and distinguishing details in Russian","condition":"visible condition only","estimatedAge":"estimate or empty","rarity":"ordinary|possibly_collectible|potentially_rare|unknown","rarityReason":"why, with uncertainty stated","price":{"low":number|null,"high":number|null,"currency":"ISO currency code","quickSale":number|null,"suggestedListing":number|null,"confidence":"low|medium|high","confidenceReason":"brief rationale and number of price examples found"},"markets":[{"country":"country","currency":"ISO currency","low":number|null,"high":number|null,"notes":"what the examples represent"}],"listings":[{"title":"real listing/page title","price":number|null,"currency":"ISO currency","condition":"condition or unknown","marketplace":"site","url":"absolute https URL from search results","evidenceType":"active_listing|sold|reference"}],"followUpQuestions":["questions if photos/details needed"],"listingDraft":{"title":"honest sale title","description":"honest concise description; do not invent condition","hashtags":["#tag"]},"sources":["absolute https URLs actually returned by Google Search"]}
+Rules: Use search evidence for prices; never invent a listing, sale price, source, brand, or model number. Include up to 6 best relevant sources with actual URLs and observed prices. Prefer sold prices when available; label active listings as active, not sold. Do not mix currencies. If no reliable exact match or price evidence is found, use null for unsupported price fields and low confidence. If results are only general marketplace search pages, include them as references, not actual listings. Clearly separate estimates from verified listing prices. Keep results in Russian.`;
 
-    const contents = [{
-      role: "user" as const,
-      parts: [{ text: prompt }, { inlineData: { mimeType, data: base64 } }],
-    }];
+    const client = new GoogleGenAI({ apiKey });
     const configuredModel = process.env.GEMINI_MODEL?.trim();
-    const model = !configuredModel || configuredModel === "gemini-2.5-flash" ? "gemini-3.5-flash-lite" : configuredModel;
+    const model = !configuredModel || configuredModel === "gemini-2.5-flash" ? "gemini-3.8-flash" : configuredModel;
 
-    // One vision-only request avoids the slow grounded-search + second-model
-    // retry chain that was hitting Vercel's 60-second runtime timeout.
-    // Current market listings are deliberately left empty rather than fabricated.
-    const visionPrompt = prompt + "\\n\\nVision-only mode: do not use or claim web search. Return empty listings, markets, and sources. Use null for unsupported price values and low confidence.";
+    // One grounded request: image identification and current web research together.
     const response = await client.models.generateContent({
       model,
-      contents: [{
-        role: "user",
-        parts: [{ text: visionPrompt }, { inlineData: { mimeType, data: base64 } }],
-      }],
-      config: { responseMimeType: "application/json", temperature: 0.2 },
+      contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: { mimeType, data: base64 } }] }],
+      config: { tools: [{ googleSearch: {} }], temperature: 0.2 },
     });
     const raw = extractJson(response.text || "") as Record<string, unknown>;
-    raw.listings = [];
-    raw.markets = [];
-    raw.sources = [];
-    raw.price = {
-      ...(typeof raw.price === "object" && raw.price ? raw.price as Record<string, unknown> : {}),
-      confidence: "low",
-      confidenceReason: "Оценка по изображению без проверки актуальных объявлений.",
-    };
+    const candidate = response.candidates?.[0] as unknown as { groundingMetadata?: { groundingChunks?: Array<{ web?: { uri?: string; title?: string } }> } } | undefined;
+    const groundedSources = (candidate?.groundingMetadata?.groundingChunks || [])
+      .map(chunk => chunk.web)
+      .filter((web): web is { uri?: string; title?: string } => !!web?.uri && /^https:\/\//i.test(web.uri))
+      .map(web => web.uri as string);
+    const rawListings = Array.isArray(raw.listings) ? raw.listings.filter((item): item is Record<string, unknown> => !!item && typeof item === "object" && typeof item.url === "string" && /^https:\/\//i.test(item.url)).slice(0, 8) : [];
+    const actualPricedListings = rawListings.filter(item => typeof item.price === "number" && Number.isFinite(item.price) && item.price >= 0 && item.evidenceType !== "reference");
+    const titleForSearch = String(raw.title || "предмет").slice(0, 120);
+    const searchLinks = [
+      { title: "Искать «" + titleForSearch + "» на Vinted", marketplace: "Vinted · поиск", url: "https://www.google.com/search?q=" + encodeURIComponent("site:vinted.cz " + titleForSearch) },
+      { title: "Искать «" + titleForSearch + "» на Aukro", marketplace: "Aukro · поиск", url: "https://www.google.com/search?q=" + encodeURIComponent("site:aukro.cz " + titleForSearch) },
+      { title: "Искать «" + titleForSearch + "» на Bazoš", marketplace: "Bazoš · поиск", url: "https://www.google.com/search?q=" + encodeURIComponent("site:bazos.cz " + titleForSearch) },
+      { title: "Искать «" + titleForSearch + "» на eBay", marketplace: "eBay · поиск", url: "https://www.google.com/search?q=" + encodeURIComponent("site:ebay.com " + titleForSearch) },
+    ];
+    const modelSources = Array.isArray(raw.sources) ? raw.sources.filter((x): x is string => typeof x === "string" && /^https:\/\//i.test(x)) : [];
+    raw.sources = [...new Set([...groundedSources, ...modelSources])].slice(0, 12);
+    raw.listings = rawListings.length ? rawListings : searchLinks.map(link => ({ title: link.title, price: null, currency, condition: "Открой поиск, чтобы сравнить варианты", marketplace: link.marketplace, url: link.url, evidenceType: "reference" }));
+    if (!actualPricedListings.length) {
+      const price = typeof raw.price === "object" && raw.price ? raw.price as Record<string, unknown> : {};
+      raw.price = { ...price, low: null, high: null, quickSale: null, suggestedListing: null, confidence: "low", confidenceReason: "Не удалось подтвердить цену конкретными объявлениями с указанной стоимостью. Ссылки ниже открывают поиск по площадкам." };
+    } else {
+      const price = typeof raw.price === "object" && raw.price ? raw.price as Record<string, unknown> : {};
+      raw.price = { ...price, confidence: price.confidence === "high" ? "medium" : (price.confidence || "medium") };
+    }
     const safe = {
       ...fallback,
       ...raw,
