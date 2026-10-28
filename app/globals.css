@@ -223,3 +223,18 @@ body{background:radial-gradient(ellipse at 50% -20%,rgba(13,53,143,.42),transpar
 @keyframes live-pulse{0%,100%{opacity:.65;box-shadow:0 0 7px rgba(73,144,255,.65)}50%{opacity:1;box-shadow:0 0 15px rgba(73,144,255,1)}}
 @keyframes shutter-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
 @media(max-width:420px){.live-camera-card{min-height:clamp(350px,54vh,480px);height:clamp(350px,54vh,480px)}.profile-modal{padding:17px}.profile-stats>div{padding:11px 3px}}
+
+.recent-photo-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin-top:13px}
+.recent-photo-card{display:flex;flex-direction:column;min-width:0;overflow:hidden;text-align:left;padding:0;border:1px solid rgba(73,132,255,.2);border-radius:18px;background:linear-gradient(145deg,rgba(11,27,60,.94),rgba(5,14,32,.98));box-shadow:inset 0 1px rgba(255,255,255,.05);color:#eef5ff}
+.recent-photo-card img{width:100%;height:126px;object-fit:cover;background:#07142d}
+.recent-photo-card>span{display:flex;flex-direction:column;gap:5px;padding:10px 11px;min-width:0}
+.recent-photo-card strong{font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.recent-photo-card small{font-size:10px;color:#9ab6e2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.recent-photo-card:active{transform:scale(.985)}
+.empty-glyph svg,.mini-icon svg,.save-spark svg,.tile-plus svg,.square-button svg,.search-box svg,.favorite-button svg,.item-placeholder svg,.modal-no-photo svg{width:23px;height:23px;display:block}
+.square-button svg{width:19px;height:19px}
+.favorite-button svg{width:20px;height:20px}
+.mini-icon svg{width:18px;height:18px}
+.save-spark svg{width:27px;height:27px}
+.tile-plus svg{width:24px;height:24px}
+@media(max-width:420px){.recent-photo-card img{height:112px}.recent-photo-strip{gap:9px}}
