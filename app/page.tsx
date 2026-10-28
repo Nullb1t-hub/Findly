@@ -140,9 +140,13 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); } catch {
-      setNotice("Память телефона заполнена. Удали часть фотографий или сохрани их отдельно.");
-    }
+    // Avoid serializing a large photo-heavy collection synchronously on every render.
+    const timer = window.setTimeout(() => {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); } catch {
+        setNotice("Память телефона заполнена. Удали часть фотографий или сохрани их отдельно.");
+      }
+    }, 180);
+    return () => window.clearTimeout(timer);
   }, [items]);
   useEffect(() => {
     try { localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites)); } catch { /* ignore */ }
@@ -162,8 +166,8 @@ export default function Home() {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: "environment" },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
+          width: { ideal: 2560 },
+          height: { ideal: 1440 },
           frameRate: { ideal: 30, max: 30 },
         },
         audio: false,
@@ -187,11 +191,11 @@ export default function Home() {
     const video = cameraOpen ? videoRef.current : inlineVideoRef.current;
     if (!video?.videoWidth || !video.videoHeight) return;
     const canvas = document.createElement("canvas");
-    const scale = Math.min(1, 1920 / Math.max(video.videoWidth, video.videoHeight));
+    const scale = Math.min(1, 2304 / Math.max(video.videoWidth, video.videoHeight));
     canvas.width = Math.round(video.videoWidth * scale); canvas.height = Math.round(video.videoHeight * scale);
     const context = canvas.getContext("2d"); if (!context) return;
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL("image/jpeg", .84);
+    const dataUrl = canvas.toDataURL("image/jpeg", .86);
     const thumb = document.createElement("canvas");
     const thumbScale = Math.min(1, 520 / Math.max(canvas.width, canvas.height));
     thumb.width = Math.round(canvas.width * thumbScale); thumb.height = Math.round(canvas.height * thumbScale);
