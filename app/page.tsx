@@ -63,6 +63,7 @@ export default function Home() {
   const [telegramUsername, setTelegramUsername] = useState("");
   const [telegramPhoto, setTelegramPhoto] = useState("");
   const [logoFailed, setLogoFailed] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [notice, setNotice] = useState("");
   const [familyCollections, setFamilyCollections] = useState<FamilyCollection[]>([]);
   const [activeCollectionId, setActiveCollectionId] = useState("");
@@ -76,6 +77,7 @@ export default function Home() {
   const [newCollectionName, setNewCollectionName] = useState("Семейные находки");
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const inlineVideoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
@@ -141,12 +143,26 @@ export default function Home() {
 
   const haptic = (style = "light") => window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.(style);
   const stopCamera = () => { streamRef.current?.getTracks().forEach(track => track.stop()); streamRef.current = null; setCameraStream(null); setCameraOpen(false); };
-  const openCamera = async () => {
-    haptic(); setCameraError(""); setCameraOpen(true);
-    try { if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera unavailable"); const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 2560 }, height: { ideal: 1440 } }, audio: false }); streamRef.current = stream; setCameraStream(stream); }
-    catch { setCameraError("Разреши доступ к камере в настройках Telegram и попробуй ещё раз."); }
+  const openCamera = async (expanded = false) => {
+    haptic(); setCameraError(""); setCameraOpen(expanded);
+    if (streamRef.current) { setCameraStream(streamRef.current); return; }
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera unavailable");
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 2560 }, height: { ideal: 1440 } }, audio: false });
+      streamRef.current = stream; setCameraStream(stream);
+    } catch { setCameraError("Разреши доступ к камере, чтобы сделать снимок."); }
   };
-  const capturePhoto = () => { const video = videoRef.current; if (!video?.videoWidth || !video.videoHeight) return; const canvas = document.createElement("canvas"); const scale = Math.min(1, 2200 / Math.max(video.videoWidth, video.videoHeight)); canvas.width = Math.round(video.videoWidth * scale); canvas.height = Math.round(video.videoHeight * scale); const context = canvas.getContext("2d"); if (!context) return; context.drawImage(video, 0, 0, canvas.width, canvas.height); setPhoto(canvas.toDataURL("image/jpeg", .9)); setMimeType("image/jpeg"); setCurrent(null); setError(""); stopCamera(); setMarketOpen(true); haptic("medium"); };
+  const capturePhoto = () => {
+    const video = cameraOpen ? videoRef.current : inlineVideoRef.current;
+    if (!video?.videoWidth || !video.videoHeight) return;
+    const canvas = document.createElement("canvas");
+    const scale = Math.min(1, 2600 / Math.max(video.videoWidth, video.videoHeight));
+    canvas.width = Math.round(video.videoWidth * scale); canvas.height = Math.round(video.videoHeight * scale);
+    const context = canvas.getContext("2d"); if (!context) return;
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    setPhoto(canvas.toDataURL("image/jpeg", .94)); setMimeType("image/jpeg"); setCurrent(null); setError("");
+    setCameraOpen(false); setMarketOpen(true); haptic("medium");
+  };
 
   const analyze = async () => {
     if (!photo || loading) return;
@@ -223,7 +239,13 @@ export default function Home() {
   };
   const resetScan = () => { setCurrent(null); setPhoto(null); setError(""); setExtra(""); setMarketOpen(false); };
   useEffect(() => () => { streamRef.current?.getTracks().forEach(track => track.stop()); }, []);
-  useEffect(() => { const video = videoRef.current; if (cameraOpen && video && cameraStream) { video.srcObject = cameraStream; void video.play().catch(() => undefined); } }, [cameraOpen, cameraStream]);
+  useEffect(() => {
+    const video = videoRef.current;
+    if (cameraOpen && video && cameraStream) { video.srcObject = cameraStream; void video.play().catch(() => undefined); }
+    const inline = inlineVideoRef.current;
+    if (inline && cameraStream) { inline.srcObject = cameraStream; void inline.play().catch(() => undefined); }
+  }, [cameraOpen, cameraStream]);
+  useEffect(() => { void openCamera(false); }, []);
   const onTouchStart = (event: TouchEvent<HTMLElement>) => setTouchStartX(event.touches[0]?.clientX ?? null);
   const onTouchEnd = (event: React.TouchEvent<HTMLElement>) => { if (touchStartX === null) return; const dx = (event.changedTouches[0]?.clientX ?? touchStartX) - touchStartX; if (Math.abs(dx) > 85) { if (dx < 0) { setTab("collection"); setCurrent(null); } else setTab("scan"); } setTouchStartX(null); };
 
@@ -234,20 +256,23 @@ export default function Home() {
           <span className="brand-mark brand-logo">{logoFailed ? <span className="brand-logo-fallback">F</span> : <Image src="/image.png" alt="Findly" width={42} height={42} unoptimized onError={() => setLogoFailed(true)}/>}</span>
           <span><strong>findly</strong></span>
         </button>
-        <div className="profile-pill" title={telegramName}><span className="profile-dot">{telegramPhoto ? <Image src={telegramPhoto} alt="" width={28} height={28} unoptimized/> : telegramName.slice(0, 1).toUpperCase()}</span><span>{telegramUsername ? `@${telegramUsername}` : telegramName}</span></div>
+        <button className="profile-pill" title="Открыть профиль" onClick={() => setProfileOpen(true)}><span className="profile-dot">{telegramPhoto ? <Image src={telegramPhoto} alt="" width={28} height={28} unoptimized/> : telegramName.slice(0, 1).toUpperCase()}</span><span>{telegramUsername ? "@" + telegramUsername : telegramName}</span><svg className="profile-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg></button>
       </header>
 
       <section key={tab} className="page-content">
         {tab === "scan" && !current && (
           <>
             
-            <div className={photo ? "scanner-card has-photo" : "scanner-card"}>
-              {photo ? <Image className="selected-photo" src={photo} alt="Выбранный предмет" width={1200} height={800} unoptimized/> : <span className="scanner-visual"><span className="scan-ring ring-one"/><span className="scan-ring ring-two"/><span className="scan-core"><svg viewBox="0 0 24 24"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h2l1.3-1.5h4.4L15.5 5h2A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5Z"/><circle cx="12" cy="12" r="3.5"/></svg></span><span className="spark spark-a">✳</span><span className="spark spark-b">✧</span></span>}
-              <span className="scanner-label">{photo ? "Фото готово" : "Камера"}</span>
+            <div className={photo ? "scanner-card has-photo live-camera-card" : "scanner-card live-camera-card"}>
+              {photo ? <Image className="selected-photo" src={photo} alt="Снятый предмет" width={1200} height={800} unoptimized/> : <video ref={inlineVideoRef} className="inline-camera-video" playsInline muted autoPlay/>}
+              {!photo && <div className="camera-frame-corners" aria-hidden="true"><svg viewBox="0 0 100 100"><path d="M20 3H9a6 6 0 0 0-6 6v11M80 3h11a6 6 0 0 1 6 6v11M3 80v11a6 6 0 0 0 6 6h11M97 80v11a6 6 0 0 1-6 6H80"/></svg></div>}
+              <div className="live-camera-top"><span className="live-dot"/><span>{photo ? "СНИМОК ГОТОВ" : cameraStream ? "КАМЕРА АКТИВНА" : "КАМЕРА"}</span><button className="expand-camera" onClick={() => cameraOpen ? setCameraOpen(false) : void openCamera(true)} aria-label="Развернуть камеру на весь экран"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/></svg></button></div>
+              {cameraError && !photo && <div className="inline-camera-error"><span>{cameraError}</span><button onClick={() => void openCamera(false)}>Разрешить</button></div>}
+              {!photo && <div className="camera-reticle" aria-hidden="true"><svg viewBox="0 0 100 100"><path d="M35 5H15a10 10 0 0 0-10 10v20M65 5h20a10 10 0 0 1 10 10v20M5 65v20a10 10 0 0 0 10 10h20M95 65v20a10 10 0 0 1-10 10H65"/></svg></div>}
+              <div className="inline-camera-bottom"><span>{photo ? "Предмет сфотографирован" : "Наведи камеру на предмет"}</span><button className="shutter inline-shutter" onClick={photo ? resetScan : capturePhoto} aria-label={photo ? "Сделать новое фото" : "Сфотографировать"}><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="18"/><circle cx="24" cy="24" r="13"/></svg></button><small>{photo ? "Нажми, чтобы переснять" : "Коснись круга, чтобы сделать фото"}</small></div>
             </div>
             {photo && <div className="selected-actions"><button className="button-secondary" onClick={resetScan}>Переснять</button><button className="button-primary" onClick={() => setMarketOpen(true)}>Продолжить <span>→</span></button></div>}
-            <button className="camera-launch" onClick={openCamera}><span className="camera-launch-icon">⌾</span><span>{photo ? "Сфотографировать ещё раз" : "Сфотографировать"}</span><span className="camera-launch-arrow">↗</span></button>
-            <div className="section-title"><div><span className="eyebrow">МОИ НАХОДКИ</span><h2>Коллекция</h2></div><button className="text-link" onClick={() => setTab("collection")}>Открыть <span>↗</span></button></div>
+            <div className="section-title"><div><span className="eyebrow">НЕДАВНИЕ СНИМКИ</span><h2>Последние фото</h2></div><button className="text-link" onClick={() => setTab("collection")}>Коллекции <span>→</span></button></div>
             {items.length ? <div className="item-grid">{items.filter(x => x.status !== "archived").slice(0, 4).map(item => <ItemCard key={item.id} item={item} onClick={() => setDetail(item)} favorite={favorites.includes(item.id)} onFavorite={() => toggleFavorite(item.id)}/>)}</div> : <div className="empty-mini"><span className="empty-glyph">◇</span><div><strong>Пока пусто</strong></div></div>}
           </>
         )}
@@ -299,7 +324,7 @@ export default function Home() {
       {notice && <div className="toast" role="status"><span>✓</span>{notice}<button onClick={() => setNotice("")}>×</button></div>}
 
       {newCollectionOpen && <div className="modal-backdrop market-backdrop" onClick={() => setNewCollectionOpen(false)}><section className="market-modal create-collection-modal" role="dialog" aria-modal="true" aria-label="Новая коллекция" onClick={e => e.stopPropagation()}><button className="modal-close" onClick={() => setNewCollectionOpen(false)}>×</button><div className="tile-plus">＋</div><h2>Новая коллекция</h2><label className="extra-label">Название<input value={newCollectionName} onChange={e => setNewCollectionName(e.target.value)} maxLength={80} placeholder="Например, семейные находки"/></label><p className="create-collection-hint">После создания можно пригласить человека по коду.</p><button className="button-primary full-width" onClick={confirmCreateCollection} disabled={familyBusy || !newCollectionName.trim()}>{familyBusy ? "Создаём…" : "Создать коллекцию"} <span>→</span></button></section></div>}
-      {cameraOpen && <div className="camera-overlay"><video ref={videoRef} className="camera-video" playsInline muted autoPlay/><div className="camera-topline"><button onClick={stopCamera} aria-label="Закрыть камеру">×</button><span>FINDLY</span><button onClick={() => window.Telegram?.WebApp?.expand?.()} aria-label="Развернуть">⛶</button></div>{cameraError && <div className="camera-error">{cameraError}<button onClick={openCamera}>Повторить</button></div>}<div className="camera-bottom"><span>Наведи на предмет</span><button className="shutter" onClick={capturePhoto} aria-label="Сделать фото"><span/></button><small>Нажми, чтобы сфотографировать</small></div></div>}
+      {cameraOpen && <div className="camera-overlay"><video ref={videoRef} className="camera-video" playsInline muted autoPlay/><div className="camera-topline"><button onClick={() => setCameraOpen(false)} aria-label="Свернуть камеру"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button><span>FINDLY</span><button onClick={() => window.Telegram?.WebApp?.expand?.()} aria-label="Развернуть"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/></svg></button></div>{cameraError && <div className="camera-error">{cameraError}<button onClick={openCamera}>Повторить</button></div>}<div className="camera-bottom"><span>Наведи на предмет</span><button className="shutter" onClick={capturePhoto} aria-label="Сделать фото"><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="18"/><circle cx="24" cy="24" r="13"/></svg></button><small>Нажми, чтобы сфотографировать</small></div></div>}
       {marketOpen && photo && !current && <div className="modal-backdrop market-backdrop"><section className="market-modal" role="dialog" aria-modal="true" aria-label="Регион и валюта"><button className="modal-close" onClick={() => setMarketOpen(false)}>×</button><div className="modal-photo market-photo"><Image src={photo} alt="Предмет" width={1200} height={800} unoptimized/></div><h2>Страна и валюта</h2><div className="field-grid"><label>Страна<select value={country} onChange={e => setCountry(e.target.value)}><option value="Czechia">Чехия</option><option value="Germany">Германия</option><option value="Poland">Польша</option><option value="United States">США</option><option value="United Kingdom">Великобритания</option><option value="Ukraine">Украина</option><option value="France">Франция</option><option value="Worldwide">Весь мир</option></select></label><label>Валюта<select value={currency} onChange={e => setCurrency(e.target.value)}><option value="EUR">EUR · €</option><option value="CZK">CZK · Kč</option><option value="USD">USD · $</option><option value="GBP">GBP · £</option><option value="PLN">PLN · zł</option><option value="UAH">UAH · ₴</option></select></label></div><label className="extra-label">Детали <span>необязательно</span><textarea value={extra} onChange={e => setExtra(e.target.value)} placeholder="Марка, модель, год выпуска…" rows={2}/></label><button className="button-primary full-width analyze-button" onClick={analyze} disabled={loading}>{loading ? <><span className="spinner"/> Ищем аналоги…</> : "Найти стоимость"}<span>→</span></button></section></div>}
       {detail && <div className="modal-backdrop" onClick={() => setDetail(null)}><section className="item-modal" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={detail.title}><button className="modal-close" onClick={() => setDetail(null)} aria-label="Close">×</button><div className="modal-photo">{detail.photoDataUrl ? <Image src={detail.photoDataUrl} alt={detail.title} width={1200} height={800} unoptimized/> : <div className="modal-no-photo">{iconFor(detail.category)}</div>}<span className="modal-category">{detail.category}</span></div><div className="modal-body"><div className="eyebrow">ITEM OVERVIEW</div><h2>{detail.title}</h2>{detail.brand && <p className="modal-brand">{detail.brand} {detail.model || ""}</p>}<div className="modal-price">{detail.price.low != null && detail.price.high != null ? `${money(detail.price.low, detail.price.currency)} – ${money(detail.price.high, detail.price.currency)}` : "Нет надёжной оценки"}</div><p className="modal-description">{detail.description}</p><div className="detail-chips"><span>{detail.condition}</span><span>{detail.status === "sold" ? "Продано" : detail.status === "for_sale" ? "На продаже" : "В коллекции"}</span></div><div className="modal-actions">{detail.status !== "for_sale" && detail.status !== "sold" && <button className="button-primary full-width" onClick={() => changeStatus(detail, "for_sale")}>Отметить как выставленное</button>}{detail.status !== "sold" && <button className="button-secondary full-width" onClick={() => changeStatus(detail, "sold")}>Отметить как проданное ✓</button>}<button className="text-danger full-width" onClick={() => changeStatus(detail, "archived")}>Убрать из коллекции</button></div></div></section></div>}
     </main>
