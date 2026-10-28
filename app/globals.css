@@ -173,3 +173,6 @@ body{background:radial-gradient(ellipse at 50% -20%,rgba(13,53,143,.42),transpar
 @keyframes page-enter{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
 @media(max-width:420px){.page-content{padding:14px 13px 25px}.scanner-card{min-height:310px}.collection-tiles{gap:9px}.collection-tile{min-height:146px;padding:12px}.profile-pill{max-width:48%}.market-modal{padding:15px}.camera-launch{padding:13px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
+
+.brand-logo-fallback{font:800 25px 'Manrope',sans-serif;color:#c7e0ff;text-shadow:0 0 18px rgba(54,124,255,.8)}
+.empty-mini p{display:none}.empty-mini strong{font-size:13px;color:#dbe9ff}
