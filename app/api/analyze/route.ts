@@ -76,7 +76,9 @@ Rules: Search the exact brand/model first, then close visual matches. Include on
       role: "user" as const,
       parts: [{ text: prompt }, { inlineData: { mimeType, data: base64 } }],
     }];
-    const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+    const configuredModel = process.env.GEMINI_MODEL?.trim();
+    // Ignore the retired default if it is still configured in Vercel.
+    const model = !configuredModel || configuredModel === "gemini-2.5-flash" ? "gemini-3.8-flash" : configuredModel;
     let raw: Record<string, unknown>;
     try {
       // Grounded search is used first. Avoid forcing JSON MIME mode in the same
