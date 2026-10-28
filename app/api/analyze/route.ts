@@ -90,7 +90,7 @@ Rules: Search the exact brand/model first, then close visual matches. Include on
       console.error("[Findly] Gemini grounded search failed; retrying vision-only analysis.", searchError);
       // A second pass keeps image identification working when Search grounding
       // is unavailable. It must not fabricate sources or comparable listings.
-      const retryPrompt = prompt + "\\n\\nThis is a vision-only fallback: do not claim you searched the web. Return empty listings and sources unless URLs are present in the input. If prices cannot be supported, use null values and low confidence.";
+      const retryPrompt = prompt + "\n\nThis is a vision-only fallback: do not claim you searched the web. Return empty listings and sources unless URLs are present in the input. If prices cannot be supported, use null values and low confidence.";
       const retry = await client.models.generateContent({
         model,
         contents: [{ role: "user", parts: [{ text: retryPrompt }, { inlineData: { mimeType, data: base64 } }] }],
