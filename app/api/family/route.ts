@@ -17,9 +17,15 @@ export async function GET(request: NextRequest) {
   if (!(await ensureSchema())) return NextResponse.json({ error: "database_not_configured" }, { status: 503 });
   const { getPool } = await import("@/lib/db-internal");
   const pool = getPool();
+  await pool.query(
+    "UPDATE findly_members SET first_name=$2, username=$3, photo_url=$4 WHERE user_id=$1",
+    [user.id, user.firstName, user.username || null, user.photoUrl || null],
+  );
   const result = await pool.query(
     `SELECT c.id, c.name, c.owner_id, m.role,
-      (SELECT COUNT(*)::int FROM findly_items i WHERE i.collection_id=c.id AND i.status <> 'archived') AS item_count
+      (SELECT COUNT(*)::int FROM findly_items i WHERE i.collection_id=c.id AND i.status <> 'archived') AS item_count,
+      (SELECT COALESCE(json_agg(json_build_object('user_id', cm.user_id, 'first_name', cm.first_name, 'username', cm.username, 'photo_url', cm.photo_url, 'role', cm.role) ORDER BY cm.created_at), '[]'::json)
+       FROM findly_members cm WHERE cm.collection_id=c.id) AS members
      FROM findly_collections c JOIN findly_members m ON m.collection_id=c.id
      WHERE m.user_id=$1 ORDER BY c.created_at DESC`,
     [user.id],
@@ -39,7 +45,7 @@ export async function POST(request: NextRequest) {
     const name = String(body.name || "Общая коллекция").trim().slice(0, 80);
     const id = randomBytes(12).toString("hex");
     await pool.query("INSERT INTO findly_collections (id,name,owner_id) VALUES ($1,$2,$3)", [id, name || "Общая коллекция", user.id]);
-    await pool.query("INSERT INTO findly_members (collection_id,user_id,role) VALUES ($1,$2,'owner')", [id, user.id]);
+    await pool.query("INSERT INTO findly_members (collection_id,user_id,role,first_name,username,photo_url) VALUES ($1,$2,'owner',$3,$4,$5)", [id, user.id, user.firstName, user.username || null, user.photoUrl || null]);
     return NextResponse.json({ collection: { id, name: name || "Общая коллекция", role: "owner", item_count: 0 } });
   }
   if (action === "invite") {
@@ -58,7 +64,7 @@ export async function POST(request: NextRequest) {
     const invite = await pool.query("SELECT collection_id,role FROM findly_invites WHERE token_hash=$1 AND expires_at>NOW()", [tokenHash]);
     if (!invite.rows.length) return NextResponse.json({ error: "invite_expired" }, { status: 404 });
     const row = invite.rows[0];
-    await pool.query("INSERT INTO findly_members (collection_id,user_id,role) VALUES ($1,$2,$3) ON CONFLICT (collection_id,user_id) DO NOTHING", [row.collection_id, user.id, row.role]);
+    await pool.query("INSERT INTO findly_members (collection_id,user_id,role,first_name,username,photo_url) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (collection_id,user_id) DO UPDATE SET first_name=EXCLUDED.first_name, username=EXCLUDED.username, photo_url=EXCLUDED.photo_url", [row.collection_id, user.id, row.role, user.firstName, user.username || null, user.photoUrl || null]);
     await pool.query("DELETE FROM findly_invites WHERE token_hash=$1", [tokenHash]);
     const collection = await pool.query("SELECT id,name FROM findly_collections WHERE id=$1", [row.collection_id]);
     return NextResponse.json({ collection: collection.rows[0] });
