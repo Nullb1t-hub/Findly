@@ -3,7 +3,7 @@ import { GoogleGenAI } from "@google/genai";
 import { verifyTelegramInitData } from "@/lib/telegram";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 30;
 
 const fallback = {
   title: "Предмет требует уточнения",
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
 
     const client = new GoogleGenAI({ apiKey });
 
-    const prompt = `You are Findly, a careful global resale researcher. Analyze the attached photo and research comparable items on the public web using Google Search grounding. User's primary market: ${country}; preferred currency: ${currency}. Additional notes: ${extra || "none"}.
+    const prompt = `You are Findly, a careful item-identification and resale assistant. Analyze the attached photo visually. Do not claim you searched the web or verified current listings. User's primary market: ${country}; preferred currency: ${currency}. Additional notes: ${extra || "none"}.
 Return only valid JSON with this schema:
 {
 "title":"short item name in Russian","brand":"known brand or empty","model":"model or empty","category":"category in Russian","description":"specific visual identification and distinguishing details in Russian","condition":"visible condition only; don't infer hidden defects","estimatedAge":"estimate or empty","rarity":"ordinary|possibly_collectible|potentially_rare|unknown","rarityReason":"why, with uncertainty stated",
@@ -70,51 +70,36 @@ Return only valid JSON with this schema:
 "listingDraft":{"title":"honest sale title","description":"honest concise description; don't invent condition","hashtags":["#tag"]},
 "sources":["URLs actually consulted"]
 }
-Rules: Search the exact brand/model first, then close visual matches. Include only URLs actually found and never invent listings, prices, sales, or sources. Clearly distinguish active asking prices from confirmed sold prices. Do not claim sold prices unless the source explicitly shows a completed sale. If no reliable matches exist, use null prices, low confidence, and explain why. Price the primary market realistically after considering item condition and shipping/fees; international markets are additional opportunities, not assumed better. For additional markets, include only plausible regions and explain shipping, import, platform-access, and fees caveats. If item may be counterfeit or high-risk, say so. If more photos are required, add up to 3 concise follow-up questions. Keep results in Russian.`;
+Rules: Do not invent listings, prices, sales, sources, brands, or model numbers. Estimate only when visual evidence supports it; otherwise use null prices and low confidence. Clearly state uncertainty and that current market prices were not verified. If the item may be counterfeit or high-risk, say so. If more photos are required, add up to 3 concise follow-up questions. Keep results in Russian.`;
 
     const contents = [{
       role: "user" as const,
       parts: [{ text: prompt }, { inlineData: { mimeType, data: base64 } }],
     }];
     const configuredModel = process.env.GEMINI_MODEL?.trim();
-    // Ignore the retired default if it is still configured in Vercel.
     const model = !configuredModel || configuredModel === "gemini-2.5-flash" ? "gemini-3.5-flash-lite" : configuredModel;
-    const fallbackModel = model === "gemini-3.5-flash-lite" ? "gemini-3.8-flash" : "gemini-3.5-flash-lite";
-    let raw: Record<string, unknown>;
-    try {
-      // Grounded search is used first. Avoid forcing JSON MIME mode in the same
-      // request because some Gemini model/API combinations reject that pairing.
-      const researched = await client.models.generateContent({
-        model,
-        contents,
-        config: { temperature: 0.2, tools: [{ googleSearch: {} }] },
-      });
-      raw = extractJson(researched.text || "") as Record<string, unknown>;
-    } catch (searchError) {
-      console.error("[Findly] Gemini grounded search failed; trying vision-only on fallback model.", searchError);
-      // Search grounding can exhaust a model's separate quota or become overloaded.
-      // Retry image identification with a different supported model so the user can
-      // still receive a cautious visual result without fabricated market sources.
-      const retryPrompt = prompt + "\n\nThis is a vision-only fallback: do not claim you searched the web. Return empty listings and sources. If prices cannot be supported from the image alone, use null values and low confidence.";
-      try {
-        const retry = await client.models.generateContent({
-          model: fallbackModel,
-          contents: [{ role: "user", parts: [{ text: retryPrompt }, { inlineData: { mimeType, data: base64 } }] }],
-          config: { responseMimeType: "application/json", temperature: 0.2 },
-        });
-        raw = extractJson(retry.text || "") as Record<string, unknown>;
-        raw.listings = [];
-        raw.sources = [];
-        raw.price = {
-          ...(typeof raw.price === "object" && raw.price ? raw.price as Record<string, unknown> : {}),
-          confidence: "low",
-          confidenceReason: "Предварительная оценка только по фото; поиск актуальных объявлений сейчас недоступен.",
-        };
-      } catch (visionError) {
-        console.error("[Findly] Gemini vision fallback failed.", visionError);
-        throw visionError;
-      }
-    }
+
+    // One vision-only request avoids the slow grounded-search + second-model
+    // retry chain that was hitting Vercel's 60-second runtime timeout.
+    // Current market listings are deliberately left empty rather than fabricated.
+    const visionPrompt = prompt + "\\n\\nVision-only mode: do not use or claim web search. Return empty listings, markets, and sources. Use null for unsupported price values and low confidence.";
+    const response = await client.models.generateContent({
+      model,
+      contents: [{
+        role: "user",
+        parts: [{ text: visionPrompt }, { inlineData: { mimeType, data: base64 } }],
+      }],
+      config: { responseMimeType: "application/json", temperature: 0.2 },
+    });
+    const raw = extractJson(response.text || "") as Record<string, unknown>;
+    raw.listings = [];
+    raw.markets = [];
+    raw.sources = [];
+    raw.price = {
+      ...(typeof raw.price === "object" && raw.price ? raw.price as Record<string, unknown> : {}),
+      confidence: "low",
+      confidenceReason: "Оценка по изображению без проверки актуальных объявлений.",
+    };
     const safe = {
       ...fallback,
       ...raw,
