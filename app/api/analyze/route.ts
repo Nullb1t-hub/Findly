@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "telegram_auth_failed" }, { status: 401 });
     }
   }
-  if (!process.env.GEMINI_API_KEY) {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;\n  if (!apiKey) {
     return NextResponse.json({ error: "ai_not_configured", message: "Добавьте GEMINI_API_KEY в настройки окружения Vercel." }, { status: 503 });
   }
 
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     const base64 = image.split(",")[1];
     if (!base64) return NextResponse.json({ error: "invalid_image" }, { status: 400 });
 
-    const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const client = new GoogleGenAI({ apiKey });
 
     const prompt = `You are Findly, a careful global resale researcher. Analyze the attached photo and research comparable items on the public web using Google Search grounding. User's primary market: ${country}; preferred currency: ${currency}. Additional notes: ${extra || "none"}.
 Return only valid JSON with this schema:
