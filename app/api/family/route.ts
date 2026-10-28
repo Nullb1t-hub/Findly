@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "telegram_auth_failed" }, { status: 401 });
   if (!(await ensureSchema())) return NextResponse.json({ error: "database_not_configured", message: "Общие коллекции не подключены: в Vercel нужно настроить DATABASE_URL." }, { status: 503 });
   const pool = getPool();
+  if (!pool) return NextResponse.json({ error: "database_not_configured", message: "Не удалось подключиться к базе данных." }, { status: 503 });
   await pool.query(
     "UPDATE findly_members SET first_name=$2, username=$3, photo_url=$4 WHERE user_id=$1",
     [user.id, user.firstName, user.username || null, user.photoUrl || null],
@@ -36,8 +37,8 @@ export async function POST(request: NextRequest) {
   const user = getUser(request);
   if (!user) return NextResponse.json({ error: "telegram_auth_failed" }, { status: 401 });
   if (!(await ensureSchema())) return NextResponse.json({ error: "database_not_configured" }, { status: 503 });
-  const { getPool } = await import("@/lib/db-internal");
   const pool = getPool();
+  if (!pool) return NextResponse.json({ error: "database_not_configured", message: "Не удалось подключиться к базе данных." }, { status: 503 });
   const body = await request.json().catch(() => ({}));
   const action = String(body.action || "");
   try {
