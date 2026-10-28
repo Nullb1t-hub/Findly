@@ -90,7 +90,8 @@ Rules: Use search evidence for prices; never invent a listing, sale price, sourc
     ];
     const modelSources = Array.isArray(raw.sources) ? raw.sources.filter((x): x is string => typeof x === "string" && /^https:\/\//i.test(x)) : [];
     raw.sources = [...new Set([...groundedSources, ...modelSources])].slice(0, 12);
-    raw.listings = rawListings.length ? rawListings : searchLinks.map(link => ({ title: link.title, price: null, currency, condition: "Открой поиск, чтобы сравнить варианты", marketplace: link.marketplace, url: link.url, evidenceType: "reference" }));
+    const fallbackSearchLinks = searchLinks.map(link => ({ title: link.title, price: null, currency, condition: "Открой поиск, чтобы сравнить варианты", marketplace: link.marketplace, url: link.url, evidenceType: "reference" }));
+    raw.listings = actualPricedListings.length ? rawListings : [...rawListings, ...fallbackSearchLinks.filter(link => !rawListings.some(item => item.url === link.url))].slice(0, 8);
     if (!actualPricedListings.length) {
       const price = typeof raw.price === "object" && raw.price ? raw.price as Record<string, unknown> : {};
       raw.price = { ...price, low: null, high: null, quickSale: null, suggestedListing: null, confidence: "low", confidenceReason: "Не удалось подтвердить цену конкретными объявлениями с указанной стоимостью. Ссылки ниже открывают поиск по площадкам." };
